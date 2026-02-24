@@ -32,7 +32,7 @@ target_include_directories(main PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/dynamics/actuators
 )
 
-target_link_libraries(main vaughngl)
+target_link_libraries(main vgl)
 
 # Physics sources shared between simulations
 set(PHYSICS_SOURCES
@@ -53,4 +53,4 @@ add_executable(falcon-9
 )
 
 target_include_directories(falcon-9 PUBLIC ${PHYSICS_INCLUDE_DIRS})
-target_link_libraries(falcon-9 vaughngl)
+target_link_libraries(falcon-9 vgl)

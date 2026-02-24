@@ -1,4 +1,4 @@
-#include <vaughngl/vaughngl.h>
+#include <vgl/vgl.h>
 #include "PhysicsWorld.h"
 #include "Thruster.h"
 
