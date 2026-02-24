@@ -1,0 +1,15 @@
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/main.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/falcon-9.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/edit_cache.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/rebuild_cache.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/list_install_components.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/install.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/install/local.dir
+/Users/vaughncampos/Desktop/rigid-body/build/CMakeFiles/install/strip.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/vgl.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/edit_cache.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/rebuild_cache.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/list_install_components.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/install.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/install/local.dir
+/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/CMakeFiles/install/strip.dir

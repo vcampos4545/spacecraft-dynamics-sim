@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/CMakeFiles/vgl-populate"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/CMakeFiles/vgl-populate.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/CMakeFiles/vgl-populate-complete.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-build.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-configure.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-download.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-install.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-mkdir.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-patch.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-test.rule"
+		},
+		{
+			"file" : "/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-subbuild/vgl-populate-prefix/src/vgl-populate-stamp/vgl-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"vgl-populate"
+		],
+		"name" : "vgl-populate"
+	}
+}
