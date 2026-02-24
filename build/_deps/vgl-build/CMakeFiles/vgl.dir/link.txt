@@ -1,2 +1,0 @@
-/usr/bin/ar qc libvgl.a CMakeFiles/vgl.dir/src/GUI.cpp.o CMakeFiles/vgl.dir/src/Shader.cpp.o CMakeFiles/vgl.dir/src/Mesh.cpp.o CMakeFiles/vgl.dir/src/OBJMesh.cpp.o CMakeFiles/vgl.dir/src/OrbitalCamera.cpp.o
-/usr/bin/ranlib libvgl.a

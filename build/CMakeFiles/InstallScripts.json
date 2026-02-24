@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/vaughncampos/Desktop/rigid-body/build/cmake_install.cmake",
-		"/Users/vaughncampos/Desktop/rigid-body/build/_deps/vgl-build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

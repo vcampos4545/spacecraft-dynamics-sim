@@ -1,0 +1,27 @@
+# Build output
+build/
+
+# CMake user-specific files
+CMakeUserPresets.json
+CMakeSettings.json
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
