@@ -35,6 +35,7 @@ public:
   ~ADCS();
 
   void run(float dt);
+  void resetController();
 
   void computeGuidance(float dt);
   void computeControl(glm::quat attitude, glm::vec3 rate, float dt);

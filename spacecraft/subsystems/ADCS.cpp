@@ -12,6 +12,11 @@ ADCS::ADCS(RigidBody *body_, const std::vector<ReactionWheel *> &wheels_)
 
 ADCS::~ADCS() = default;
 
+void ADCS::resetController()
+{
+  pid.reset();
+}
+
 void ADCS::run(float dt)
 {
   // TODO: Get estimated attitude and rate from sensors
