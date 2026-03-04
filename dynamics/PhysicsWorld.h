@@ -1,5 +1,6 @@
 #pragma once
 #include "RigidBody.h"
+#include "Constraint.h"
 #include <vector>
 #include <memory>
 
@@ -20,6 +21,14 @@ public:
   void removeBody(RigidBody *body);
   void clear();
 
+  // Constraint management
+  FixedJoint        *addFixedJoint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+  DistanceConstraint *addDistanceConstraint(RigidBody *a, RigidBody *b,
+                                            const glm::vec3 &worldPivotA,
+                                            const glm::vec3 &worldPivotB,
+                                            float restLength,
+                                            bool unilateral = false);
+
   // Simulation
   void step(float dt);
 
@@ -29,10 +38,12 @@ public:
 
 private:
   std::vector<std::unique_ptr<RigidBody>> bodies;
+  std::vector<std::unique_ptr<Constraint>> constraints;
   float accumulator = 0.0f;
 
   void stepFixed(float dt);
   void integrateAll(float dt);
+  void solveConstraints(float dt);
   void detectAndResolveCollisions();
 
   // Body-to-body collision

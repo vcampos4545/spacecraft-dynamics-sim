@@ -68,6 +68,9 @@ float RigidBody::computeVolume() const
 
   case RigidBodyShape::CYLINDER:
     return M_PI * size.x * size.x * size.y;
+
+  case RigidBodyShape::CONE:
+    return (1.0f / 3.0f) * M_PI * size.x * size.x * size.y;
   }
   return 0.0f;
 }
@@ -118,6 +121,25 @@ void RigidBody::computeInertiaFromMass()
     I = glm::mat3(
         Iyy, 0, 0,
         0, Iyy, 0,
+        0, 0, Izz);
+    break;
+  }
+
+  case RigidBodyShape::CONE:
+  {
+    // Solid cone, axis along local Z, apex at +halfH, base at -halfH.
+    // Standard formulas (CG at h/4 from base):
+    //   Izz (symmetry axis) = (3/10) * m * r^2
+    //   Ixx = Iyy             = (3/20) * m * (r^2 + h^2/4)
+    float r = size.x;
+    float h = size.y;
+
+    float Izz = (3.0f / 10.0f) * mass * r * r;
+    float Ixx = (3.0f / 20.0f) * mass * (r * r + h * h / 4.0f);
+
+    I = glm::mat3(
+        Ixx, 0, 0,
+        0, Ixx, 0,
         0, 0, Izz);
     break;
   }
@@ -267,6 +289,9 @@ void RigidBody::resolveGroundCollision(float groundZ,
   case RigidBodyShape::CYLINDER:
     resolveCylinderGroundCollision(groundZ, restitution, friction);
     break;
+  case RigidBodyShape::CONE:
+    resolveConeGroundCollision(groundZ, restitution, friction);
+    break;
   }
 }
 void RigidBody::resolveBoxGroundCollision(float groundZ,
@@ -396,6 +421,128 @@ void RigidBody::resolveSphereGroundCollision(float groundZ,
 
   // Position correction
   position.z += penetration;
+}
+
+// --------------------------------------------------
+// Cone ground collision
+// --------------------------------------------------
+
+void RigidBody::resolveConeGroundCollision(float groundZ,
+                                           float restitution,
+                                           float friction)
+{
+  float r     = size.x;
+  float halfH = size.y * 0.5f;
+
+  glm::mat3 R          = glm::toMat3(orientation);
+  glm::mat3 invI_world = R * invInertiaTensor * glm::transpose(R);
+  glm::vec3 groundNormal(0, 0, 1);
+
+  // Check apex (local +Z tip)
+  glm::vec3 apex = position + R * glm::vec3(0.0f, 0.0f, halfH);
+  if (apex.z < groundZ)
+    resolveContactPoint(apex, groundZ, groundNormal, invI_world, restitution, friction);
+
+  // Check base rim (8 samples at local -Z)
+  glm::vec3 baseCenter = position + R * glm::vec3(0.0f, 0.0f, -halfH);
+  glm::vec3 axisW      = R * glm::vec3(0, 0, 1);
+
+  glm::vec3 perpX;
+  if (std::abs(axisW.z) < 0.99f)
+    perpX = glm::normalize(glm::cross(axisW, glm::vec3(0, 0, 1)));
+  else
+    perpX = glm::normalize(glm::cross(axisW, glm::vec3(1, 0, 0)));
+  glm::vec3 perpY = glm::cross(axisW, perpX);
+
+  const int numSamples = 8;
+  for (int i = 0; i < numSamples; ++i)
+  {
+    float angle   = (2.0f * M_PI * i) / numSamples;
+    glm::vec3 rim = baseCenter + r * (std::cos(angle) * perpX + std::sin(angle) * perpY);
+    if (rim.z < groundZ)
+      resolveContactPoint(rim, groundZ, groundNormal, invI_world, restitution, friction);
+  }
+}
+
+// --------------------------------------------------
+// Support function (GJK)
+// --------------------------------------------------
+
+glm::vec3 RigidBody::support(const glm::vec3 &worldDir) const
+{
+  glm::mat3 R = glm::toMat3(orientation);
+  glm::vec3 d = glm::transpose(R) * worldDir; // local-space direction
+
+  glm::vec3 local;
+
+  switch (shape)
+  {
+  case RigidBodyShape::SPHERE:
+  {
+    float len = glm::length(d);
+    local     = (len > 1e-6f) ? (size.x / len) * d : glm::vec3(size.x, 0, 0);
+    break;
+  }
+
+  case RigidBodyShape::BOX:
+  {
+    local = {
+        d.x >= 0.0f ?  size.x * 0.5f : -size.x * 0.5f,
+        d.y >= 0.0f ?  size.y * 0.5f : -size.y * 0.5f,
+        d.z >= 0.0f ?  size.z * 0.5f : -size.z * 0.5f};
+    break;
+  }
+
+  case RigidBodyShape::CYLINDER:
+  {
+    float r     = size.x;
+    float halfH = size.y * 0.5f;
+    float diskR = std::sqrt(d.x * d.x + d.y * d.y);
+    local = {
+        diskR > 1e-6f ? d.x / diskR * r : r,
+        diskR > 1e-6f ? d.y / diskR * r : 0.0f,
+        d.z >= 0.0f ? halfH : -halfH};
+    break;
+  }
+
+  case RigidBodyShape::CONE:
+  {
+    // Apex at (0,0,+halfH); base circle radius r at (0,0,-halfH).
+    // furthest point in dir d is apex when:
+    //   d.z * halfH >= r * diskR - d.z * halfH
+    float r     = size.x;
+    float halfH = size.y * 0.5f;
+    float diskR = std::sqrt(d.x * d.x + d.y * d.y);
+    if (d.z * halfH >= r * diskR - d.z * halfH)
+    {
+      local = {0.0f, 0.0f, halfH};
+    }
+    else
+    {
+      local = {
+          diskR > 1e-6f ? d.x / diskR * r : r,
+          diskR > 1e-6f ? d.y / diskR * r : 0.0f,
+          -halfH};
+    }
+    break;
+  }
+  }
+
+  return position + R * local;
+}
+
+// --------------------------------------------------
+// Compound shape ground contact (for attached sub-shapes)
+// --------------------------------------------------
+
+void RigidBody::applyGroundContact(const glm::vec3 &worldPoint,
+                                   float groundZ,
+                                   float restitution,
+                                   float friction)
+{
+  glm::mat3 R          = glm::toMat3(orientation);
+  glm::mat3 invI_world = R * invInertiaTensor * glm::transpose(R);
+  resolveContactPoint(worldPoint, groundZ, {0, 0, 1}, invI_world, restitution, friction);
 }
 
 void RigidBody::resolveCylinderGroundCollision(float groundZ,

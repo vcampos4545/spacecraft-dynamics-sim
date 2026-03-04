@@ -10,7 +10,8 @@ enum class RigidBodyShape
 {
   BOX,
   SPHERE,
-  CYLINDER
+  CYLINDER,
+  CONE   // size.x = base radius, size.y = height; apex at local +Z/2, base at -Z/2
 };
 
 class RigidBody
@@ -51,6 +52,15 @@ public:
                                              const glm::vec3 &size,
                                              float mass);
 
+  // Support function for GJK: returns the world-space point on this body
+  // furthest in world direction `dir`.
+  glm::vec3 support(const glm::vec3 &dir) const;
+
+  // Apply a ground-plane contact impulse at an arbitrary world point (for
+  // compound/attached shapes whose contact is resolved into this body).
+  void applyGroundContact(const glm::vec3 &worldPoint, float groundZ,
+                          float restitution, float friction);
+
   void applyForce(const glm::vec3 &force);
   void applyTorque(const glm::vec3 &torque);
   void applyForceAtPoint(const glm::vec3 &force,
@@ -71,6 +81,9 @@ public:
   void resolveCylinderGroundCollision(float groundZ,
                                       float restitution,
                                       float friction);
+  void resolveConeGroundCollision(float groundZ,
+                                  float restitution,
+                                  float friction);
 
   // Get velocity at a world-space point on the body
   glm::vec3 getVelocityAtPoint(const glm::vec3 &worldPoint) const;

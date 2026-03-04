@@ -20,6 +20,7 @@ add_executable(main
     spacecraft/subsystems/ADCS.cpp
     dynamics/RigidBody.cpp
     dynamics/PhysicsWorld.cpp
+    dynamics/Constraint.cpp
     dynamics/actuators/ReactionWheel.cpp
     dynamics/actuators/Thruster.cpp
 )
@@ -38,6 +39,7 @@ target_link_libraries(main vgl)
 set(PHYSICS_SOURCES
     dynamics/RigidBody.cpp
     dynamics/PhysicsWorld.cpp
+    dynamics/Constraint.cpp
     dynamics/actuators/ReactionWheel.cpp
     dynamics/actuators/Thruster.cpp
 )
@@ -54,3 +56,11 @@ add_executable(falcon-9
 
 target_include_directories(falcon-9 PUBLIC ${PHYSICS_INCLUDE_DIRS})
 target_link_libraries(falcon-9 vgl)
+
+add_executable(bars
+    bars.cpp
+    ${PHYSICS_SOURCES}
+)
+
+target_include_directories(bars PUBLIC ${PHYSICS_INCLUDE_DIRS})
+target_link_libraries(bars vgl)
