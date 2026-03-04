@@ -1,6 +1,15 @@
 #include <vgl/vgl.h>
 #include "PhysicsWorld.h"
 #include "spacecraft/Satellite.h"
+#include <random>
+
+static glm::vec3 randomTarget()
+{
+  static std::mt19937 rng(std::random_device{}());
+  static std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+  glm::vec3 v(dist(rng), dist(rng), dist(rng));
+  return glm::normalize(v);
+}
 
 namespace Config
 {
@@ -108,6 +117,7 @@ int main()
   // Create physics world
   PhysicsWorld world;
   Satellite sat(&world);
+  sat.adcs.target = randomTarget();
 
   float lastTime = glfwGetTime();
   while (!gui.shouldClose())
@@ -122,31 +132,16 @@ int main()
     glm::vec2 mouseDelta = mousePos - lastMousePos;
     lastMousePos = mousePos;
 
-    // if (gui.isKeyJustPressed(GLFW_KEY_SPACE))
-    // {
-    //   printf("mousePos: %f, %f\n", mousePos.x, mousePos.y);
-    //   float windowWidth = gui.getWindowWidth();
-    //   float windowHeight = gui.getWindowHeight();
-    //   float x = (2.0f * mousePos.x) / windowWidth - 1.0f;
-    //   float y = 1.0f - (2.0f * mousePos.y) / windowHeight;
-
-    //   glm::vec3 cameraPosition = gui.camera.position;
-    //   glm::mat4 projectionMatrix = gui.camera.getProjectionMatrix(windowWidth / windowHeight);
-    //   glm::mat4 viewMatrix = gui.camera.getViewMatrix();
-
-    //   glm::vec4 rayClip = glm::vec4(x, y, -1.0f, 1.0f);
-    //   glm::vec4 rayView = glm::inverse(projectionMatrix) * rayClip;
-
-    //   // Turn into direction
-    //   rayView = glm::vec4(rayView.x, rayView.y, -1.0f, 0.0f);
-    //   glm::vec3 rayWorld = glm::normalize(glm::vec3(glm::inverse(viewMatrix) * rayView));
-    //   glm::vec3 rayDirection = rayWorld;
-
-    //   // TODO: Check intersection (Spherical)
-    // }
+    if (gui.isKeyJustPressed(GLFW_KEY_SPACE))
+    {
+      // Change to random target
+    }
 
     orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
     orbit.applyToCamera(gui.camera);
+
+    if (gui.isKeyJustPressed(GLFW_KEY_SPACE))
+      sat.adcs.target = randomTarget();
 
     // =================== UPDATE SIMULATION ===================
 
