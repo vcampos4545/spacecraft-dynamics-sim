@@ -3,6 +3,7 @@
 #include "ADCS.h"
 
 class PhysicsWorld;
+class Universe;
 class RigidBody;
 class ReactionWheel;
 class Thruster;
@@ -11,6 +12,7 @@ class Satellite
 {
 public:
   Satellite(PhysicsWorld *world);
+  Satellite(Universe *universe); // for orbital simulations
 
   void update(float dt);
 

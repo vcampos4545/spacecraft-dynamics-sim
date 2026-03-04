@@ -69,6 +69,12 @@ public:
   void applyForceGenerators(float dt);
 
   void integrate(float dt);
+
+  // Integrate attitude only (angular velocity + orientation), without touching
+  // linear position/velocity.  Used by Universe for orbital bodies where
+  // translation is handled separately by a high-precision RK4 integrator.
+  void stepAttitude(float dt);
+
   void resolveGroundCollision(float groundZ = 0.0f,
                               float restitution = 0.3f,
                               float friction = 0.5f);

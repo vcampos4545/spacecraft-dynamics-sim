@@ -241,6 +241,14 @@ void RigidBody::clearAccumulators()
   torqueAccum = glm::vec3(0.0f);
 }
 
+void RigidBody::stepAttitude(float dt)
+{
+  if (invMass == 0.0f) return;
+  applyForceGenerators(dt);
+  integrateAngular(dt);
+  clearAccumulators();
+}
+
 // --------------------------------------------------
 // Collision
 // --------------------------------------------------
