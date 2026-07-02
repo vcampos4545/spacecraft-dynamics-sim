@@ -8,6 +8,7 @@ ADCS::ADCS(RigidBody *body_, const std::vector<ReactionWheel *> &wheels_)
   wheels = wheels_;
 
   pid.autoTune(body->inertiaTensor, settlingTime, dampingRatio);
+  lqr.autoTune(body->inertiaTensor);
 }
 
 ADCS::~ADCS() = default;
@@ -15,6 +16,7 @@ ADCS::~ADCS() = default;
 void ADCS::resetController()
 {
   pid.reset();
+  lqr.reset();
 }
 
 void ADCS::run(float dt)
@@ -56,8 +58,16 @@ void ADCS::computeGuidance(float dt)
 
 void ADCS::computeControl(glm::quat attitude, glm::vec3 rate, float dt)
 {
-  // TODO: Add switch statement for different controllers
-  torqueCommand = pid.computeControlTorque(targetAttitude, attitude, rate, dt);
+  switch (controllerType)
+  {
+  case ControllerType::LQR:
+    torqueCommand = lqr.computeControlTorque(targetAttitude, attitude, rate, dt);
+    break;
+  case ControllerType::PID:
+  default:
+    torqueCommand = pid.computeControlTorque(targetAttitude, attitude, rate, dt);
+    break;
+  }
 }
 
 void ADCS::allocateActuators()

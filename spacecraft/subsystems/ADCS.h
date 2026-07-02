@@ -16,10 +16,17 @@ enum class ControlMode
   FINE_POINTING    // High precision science mode
 };
 
+enum class ControllerType
+{
+  PID,
+  LQR
+};
+
 class ADCS
 {
 public:
   ControlMode mode = ControlMode::TARGET_POINTING;
+  ControllerType controllerType = ControllerType::LQR;
   glm::vec3 target = {0.5f, 0.5f, 0.5f};
   glm::quat targetAttitude;
   glm::vec3 torqueCommand;
@@ -44,6 +51,7 @@ public:
 
 private:
   PIDController pid;
+  LQRController lqr;
   float settlingTime = 5.0f; // Desired settling time (seconds)
   float dampingRatio = 1.0f; // 1.0 = critically damped, <1 = underdamped (oscillates), >1 = overdamped (slow)
 };

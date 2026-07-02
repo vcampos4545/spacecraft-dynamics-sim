@@ -2,6 +2,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/common.hpp>
+#include <cmath>
 
 void PIDController::autoTune(glm::mat3 inertiaTensor,
                              float settlingTime,
@@ -140,9 +141,65 @@ void PIDController::reset()
 //   glm::vec3 computeControlTorque() { return {0, 0, 0}; }
 // };
 
-// class LQRController
-// {
-//     glm::vec3 computeControlTorque(){return {0, 0, 0};
-// }
-// }
-// ;
+void LQRController::autoTune(glm::mat3 inertiaTensor,
+                             glm::vec3 Q_att_,
+                             glm::vec3 Q_rate_,
+                             glm::vec3 R_)
+{
+  Q_att = Q_att_;
+  Q_rate = Q_rate_;
+  R = R_;
+
+  // Solve the CARE per-axis for A = [[0,1],[0,0]], B = [[0],[b]], b = 1/I_axis
+  // Closed form (see header comment):
+  //   p12 = sqrt(q1*r) / b
+  //   p22 = sqrt(r * (2*p12 + q2)) / b
+  //   K   = [b*p12/r, b*p22/r]
+  for (int i = 0; i < 3; i++)
+  {
+    float I = inertiaTensor[i][i];
+    float b = (I > 1e-9f) ? (1.0f / I) : 0.0f;
+
+    float q1 = Q_att[i];
+    float q2 = Q_rate[i];
+    float r = R[i];
+
+    if (b <= 0.0f || r <= 0.0f)
+    {
+      Kp[i] = 0.0f;
+      Kd[i] = 0.0f;
+      continue;
+    }
+
+    float p12 = std::sqrt(q1 * r) / b;
+    float p22 = std::sqrt(r * (2.0f * p12 + q2)) / b;
+
+    Kp[i] = b * p12 / r;
+    Kd[i] = b * p22 / r;
+  }
+}
+
+glm::vec3 LQRController::computeControlTorque(
+    glm::quat targetAttitude,
+    const glm::quat &q_current,
+    const glm::vec3 &omega_current,
+    float dt)
+{
+  // Quaternion attitude error in BODY frame
+  glm::quat q_error = glm::inverse(q_current) * targetAttitude;
+
+  // Shortest rotation
+  if (q_error.w < 0.0f)
+  {
+    q_error = -q_error;
+  }
+
+  // Axis-angle approximation
+  glm::vec3 attitudeError(q_error.x, q_error.y, q_error.z);
+  attitudeError *= 2.0f;
+
+  // u = -K x, x = [attitudeError, omega]
+  glm::vec3 torque = Kp * attitudeError - Kd * omega_current;
+
+  return -torque;
+}
