@@ -1,5 +1,5 @@
-#include "ReactionWheel.h"
-#include "RigidBody.h"
+#include <rigidbody/actuators/ReactionWheel.h>
+#include <rigidbody/RigidBody.h>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
 

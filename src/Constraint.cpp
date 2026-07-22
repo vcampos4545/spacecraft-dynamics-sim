@@ -1,4 +1,4 @@
-#include "Constraint.h"
+#include <rigidbody/Constraint.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
 #include <cmath>

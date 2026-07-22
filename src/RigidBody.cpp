@@ -1,5 +1,5 @@
-#include "RigidBody.h"
-#include "ForceGenerator.h"
+#include <rigidbody/RigidBody.h>
+#include <rigidbody/ForceGenerator.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
 #include <cmath>
@@ -239,14 +239,6 @@ void RigidBody::clearAccumulators()
 {
   forceAccum = glm::vec3(0.0f);
   torqueAccum = glm::vec3(0.0f);
-}
-
-void RigidBody::stepAttitude(float dt)
-{
-  if (invMass == 0.0f) return;
-  applyForceGenerators(dt);
-  integrateAngular(dt);
-  clearAccumulators();
 }
 
 // --------------------------------------------------

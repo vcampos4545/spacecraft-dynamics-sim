@@ -1,8 +1,49 @@
 #include <vgl/vgl.h>
-#include "PhysicsWorld.h"
-#include "spacecraft/Satellite.h"
+#include <rigidbody/PhysicsWorld.h>
+#include <rigidbody/actuators/ReactionWheel.h>
+#include "ADCS.h"
 #include <random>
+#include <memory>
 #include <glm/gtc/constants.hpp>
+
+// ---------------------------------------------------------------------------
+// Spacecraft definition: a 1U cubesat body with 3-axis reaction wheels.
+// This is scenario code, not engine code — the engine only knows about
+// RigidBody + ForceGenerator; "Cubesat" is just how this scenario groups the
+// actuators it built for its own flight software to reference.
+// ---------------------------------------------------------------------------
+struct Cubesat
+{
+  RigidBody *body = nullptr;
+  std::vector<ReactionWheel *> wheels;
+};
+
+static Cubesat buildCubesat(PhysicsWorld &world)
+{
+  Cubesat sat;
+  sat.body = world.createBody(
+      RigidBodyShape::BOX,
+      glm::vec3(0.1f, 0.1f, 0.1f), // 10 x 10 x 10 cm
+      1.33f);                      // max mass of 1U cubesat (kg)
+
+  sat.body->position.z = sat.body->size.y * 3; // float above the ground
+
+  glm::vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+  for (int i = 0; i < 3; ++i)
+  {
+    auto wheel = std::make_unique<ReactionWheel>(
+        glm::vec3(0.0f), // mount at body center
+        axes[i],
+        0.001f,                                        // max torque (Nm)
+        6000.0f * (2.0f * glm::pi<float>() / 60.0f),    // 6000 RPM max
+        1e-6f);                                         // wheel inertia (kg*m^2)
+
+    sat.wheels.push_back(wheel.get());
+    sat.body->addForceGenerator(std::move(wheel));
+  }
+
+  return sat;
+}
 
 // ---------------------------------------------------------------------------
 // Random target on unit sphere
@@ -184,8 +225,13 @@ int main()
   glm::vec2 lastMousePos = gui.getMousePosition();
 
   PhysicsWorld world;
-  Satellite sat(&world);
-  sat.adcs.target = randomTarget();
+  Cubesat sat = buildCubesat(world);
+
+  // Flight software: ADCS holds references to the body (its attitude/rate
+  // sensors) and the wheels (its actuators) — see ADCS.h/.cpp.
+  ADCS adcs(sat.body, sat.wheels);
+  adcs.target = randomTarget();
+  float adcsTimer = 0.0f;
 
   // Telemetry buffers
   PlotBuffer plotAttErr;
@@ -206,40 +252,47 @@ int main()
 
     if (gui.isKeyJustPressed(GLFW_KEY_SPACE))
     {
-      sat.adcs.target = randomTarget();
-      sat.adcs.resetController(); // clear integral windup from previous target
+      adcs.target = randomTarget();
+      adcs.resetController(); // clear integral windup from previous target
     }
 
     orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
     orbit.applyToCamera(gui.camera);
 
-    // =================== UPDATE SIMULATION ===================
-    sat.update(dt);
+    // =================== FLIGHT SOFTWARE (20 Hz) ===================
+    // Reads body attitude/rate as sensors, commands the reaction wheels.
+    adcsTimer += dt;
+    if (adcsTimer > 0.05f)
+    {
+      adcs.run(adcsTimer);
+      adcsTimer = 0.0f;
+    }
+
+    // =================== PHYSICS ===================
     world.step(dt);
 
     // =================== TELEMETRY ===================
     {
-      RigidBody &body = sat.getBody();
+      RigidBody &body = *sat.body;
 
       // Attitude error: angle between body +Z and target direction
       glm::vec3 bodyZ    = body.orientation * glm::vec3(0, 0, 1);
-      glm::vec3 toTarget = glm::normalize(sat.adcs.target - body.position);
+      glm::vec3 toTarget = glm::normalize(adcs.target - body.position);
       float errRad       = std::acos(glm::clamp(glm::dot(bodyZ, toTarget), -1.0f, 1.0f));
       plotAttErr.push(errRad);
 
       plotAngRate.push(glm::length(body.angularVelocity));
 
-      const auto &wheels = sat.getWheels();
       for (int i = 0; i < 3; i++)
-        plotWheelSpeed[i].push(wheels[i]->getSaturationRatio());
+        plotWheelSpeed[i].push(sat.wheels[i]->getSaturationRatio());
     }
 
     // =================== DRAW ===================
     gui.beginFrame();
     drawGrid(gui);
-    drawSatellite(gui, &sat.getBody());
-    drawReactionWheels(gui, sat.getWheels(), &sat.getBody());
-    gui.drawSphere(sat.adcs.target, 0.05f, {0, 1.0f, 0});
+    drawSatellite(gui, sat.body);
+    drawReactionWheels(gui, sat.wheels, sat.body);
+    gui.drawSphere(adcs.target, 0.05f, {0, 1.0f, 0});
     drawTelemetryPlots(gui, plotAttErr, plotAngRate, plotWheelSpeed);
     gui.endFrame();
   }

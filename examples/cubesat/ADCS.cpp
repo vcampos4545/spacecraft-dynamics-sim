@@ -8,7 +8,8 @@ ADCS::ADCS(RigidBody *body_, const std::vector<ReactionWheel *> &wheels_)
   wheels = wheels_;
 
   pid.autoTune(body->inertiaTensor, settlingTime, dampingRatio);
-  lqr.autoTune(body->inertiaTensor);
+  lqr.autoTune(body->inertiaTensor, settlingTime, dampingRatio);
+  cascaded.autoTune(body->inertiaTensor, settlingTime, dampingRatio);
 }
 
 ADCS::~ADCS() = default;
@@ -17,6 +18,7 @@ void ADCS::resetController()
 {
   pid.reset();
   lqr.reset();
+  cascaded.reset();
 }
 
 void ADCS::run(float dt)
@@ -62,6 +64,9 @@ void ADCS::computeControl(glm::quat attitude, glm::vec3 rate, float dt)
   {
   case ControllerType::LQR:
     torqueCommand = lqr.computeControlTorque(targetAttitude, attitude, rate, dt);
+    break;
+  case ControllerType::CASCADED:
+    torqueCommand = cascaded.computeControlTorque(targetAttitude, attitude, rate, dt);
     break;
   case ControllerType::PID:
   default:

@@ -1,7 +1,7 @@
 #pragma once
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
-#include "RigidBody.h"
+#include <rigidbody/RigidBody.h>
 #include <utility>
 
 // -----------------------------------------------------------------------

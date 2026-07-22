@@ -1,8 +1,8 @@
 #include <vgl/vgl.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
-#include "PhysicsWorld.h"
-#include "Thruster.h"
+#include <rigidbody/PhysicsWorld.h>
+#include <rigidbody/actuators/Thruster.h>
 
 /* FALCON 9 NOTES
 

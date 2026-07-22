@@ -1,8 +1,8 @@
 #include <vgl/vgl.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
-#include "PhysicsWorld.h"
-#include "Constraint.h"
+#include <rigidbody/PhysicsWorld.h>
+#include <rigidbody/Constraint.h>
 #include <cmath>
 #include <vector>
 

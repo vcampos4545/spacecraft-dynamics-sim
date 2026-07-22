@@ -1,7 +1,7 @@
 #pragma once
-#include "glm/glm.hpp"
-#include "ReactionWheel.h"
-#include "RigidBody.h"
+#include <glm/glm.hpp>
+#include <rigidbody/actuators/ReactionWheel.h>
+#include <rigidbody/RigidBody.h>
 #include "Controllers.h"
 
 enum class ControlMode
@@ -19,14 +19,15 @@ enum class ControlMode
 enum class ControllerType
 {
   PID,
-  LQR
+  LQR,
+  CASCADED
 };
 
 class ADCS
 {
 public:
   ControlMode mode = ControlMode::TARGET_POINTING;
-  ControllerType controllerType = ControllerType::LQR;
+  ControllerType controllerType = ControllerType::PID;
   glm::vec3 target = {0.5f, 0.5f, 0.5f};
   glm::quat targetAttitude;
   glm::vec3 torqueCommand;
@@ -52,6 +53,7 @@ public:
 private:
   PIDController pid;
   LQRController lqr;
+  CascadedController cascaded;
   float settlingTime = 5.0f; // Desired settling time (seconds)
   float dampingRatio = 1.0f; // 1.0 = critically damped, <1 = underdamped (oscillates), >1 = overdamped (slow)
 };

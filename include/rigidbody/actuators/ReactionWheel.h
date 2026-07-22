@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ForceGenerator.h"
+#include <rigidbody/ForceGenerator.h>
 #include <glm/glm.hpp>
 
 class RigidBody;

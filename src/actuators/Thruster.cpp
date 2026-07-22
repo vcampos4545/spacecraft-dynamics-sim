@@ -1,5 +1,5 @@
-#include "Thruster.h"
-#include "RigidBody.h"
+#include <rigidbody/actuators/Thruster.h>
+#include <rigidbody/RigidBody.h>
 
 Thruster::Thruster(
     glm::vec3 mountPosBody,

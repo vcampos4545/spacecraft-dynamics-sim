@@ -1,6 +1,6 @@
 #pragma once
-#include "RigidBody.h"
-#include "Constraint.h"
+#include <rigidbody/RigidBody.h>
+#include <rigidbody/Constraint.h>
 #include <vector>
 #include <memory>
 
