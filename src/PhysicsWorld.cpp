@@ -246,6 +246,14 @@ RigidBody *PhysicsWorld::createBody(RigidBodyShape shape,
 
 void PhysicsWorld::removeBody(RigidBody *body)
 {
+  constraints.erase(
+      std::remove_if(constraints.begin(), constraints.end(),
+                     [body](const std::unique_ptr<Constraint> &c)
+                     {
+                       return c->involves(body);
+                     }),
+      constraints.end());
+
   bodies.erase(
       std::remove_if(bodies.begin(), bodies.end(),
                      [body](const std::unique_ptr<RigidBody> &b)
@@ -281,6 +289,27 @@ DistanceConstraint *PhysicsWorld::addDistanceConstraint(RigidBody *a, RigidBody 
   DistanceConstraint *ptr = dc.get();
   constraints.push_back(std::move(dc));
   return ptr;
+}
+
+HingeConstraint *PhysicsWorld::addHingeConstraint(RigidBody *a, RigidBody *b,
+                                                  const glm::vec3 &worldPivot,
+                                                  const glm::vec3 &worldAxis)
+{
+  auto hinge  = std::make_unique<HingeConstraint>(a, b, worldPivot, worldAxis);
+  HingeConstraint *ptr = hinge.get();
+  constraints.push_back(std::move(hinge));
+  return ptr;
+}
+
+void PhysicsWorld::removeConstraint(Constraint *constraint)
+{
+  constraints.erase(
+      std::remove_if(constraints.begin(), constraints.end(),
+                     [constraint](const std::unique_ptr<Constraint> &c)
+                     {
+                       return c.get() == constraint;
+                     }),
+      constraints.end());
 }
 
 // --------------------------------------------------

@@ -18,6 +18,8 @@ public:
                         const glm::vec3 &size,
                         float mass);
 
+  // Removing a body also removes any constraints that reference it (a
+  // constraint left pointing at a freed body would dangle).
   void removeBody(RigidBody *body);
   void clear();
 
@@ -28,6 +30,11 @@ public:
                                             const glm::vec3 &worldPivotB,
                                             float restLength,
                                             bool unilateral = false);
+  HingeConstraint    *addHingeConstraint(RigidBody *a, RigidBody *b,
+                                         const glm::vec3 &worldPivot,
+                                         const glm::vec3 &worldAxis);
+
+  void removeConstraint(Constraint *constraint);
 
   // Simulation
   void step(float dt);

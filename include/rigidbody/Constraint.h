@@ -21,6 +21,14 @@ public:
   {
     return false;
   }
+
+  // Returns true if this constraint references the given body at all.
+  // Used by PhysicsWorld::removeBody to drop constraints that would
+  // otherwise be left holding a dangling pointer.
+  virtual bool involves(const RigidBody *body) const
+  {
+    return false;
+  }
 };
 
 // -----------------------------------------------------------------------
@@ -51,21 +59,12 @@ public:
 
   void solve(float dt) override;
   bool connects(const RigidBody *a, const RigidBody *b) const override;
+  bool involves(const RigidBody *body) const override;
 
 private:
   glm::vec3 localAnchorA;        // worldPivot in bodyA local frame
   glm::vec3 localAnchorB;        // worldPivot in bodyB local frame
   glm::quat relativeOrientation; // q_A^-1 * q_B at construction
-
-  // World-space inverse inertia tensor for a body.
-  static glm::mat3 worldInvI(const RigidBody &b);
-
-  // Cross-product (skew-symmetric) matrix: skew(v)*u == cross(v, u).
-  static glm::mat3 skew(const glm::vec3 &v);
-
-  // Solve 3x3 linear system A*x = b via Cramer's rule.
-  // Returns zero if A is (near-)singular.
-  static glm::vec3 solve3(const glm::mat3 &A, const glm::vec3 &b);
 };
 
 // -----------------------------------------------------------------------
@@ -98,6 +97,7 @@ public:
 
   // Returns true for the connected pair (skips GJK between them).
   bool connects(const RigidBody *a, const RigidBody *b) const override;
+  bool involves(const RigidBody *body) const override;
 
   // Returns the current world-space positions of both anchor points.
   std::pair<glm::vec3, glm::vec3> getWorldAnchors() const;
@@ -107,6 +107,83 @@ private:
   // (or the raw world position when the corresponding body is nullptr).
   glm::vec3 localAnchorA;
   glm::vec3 localAnchorB;
+};
 
-  static glm::mat3 worldInvI(const RigidBody &b);
+// -----------------------------------------------------------------------
+// HingeConstraint — a 1-DOF revolute joint. bodyA and bodyB share a pivot
+// point and rotate freely relative to each other about a common axis;
+// translation and the two rotational DOF perpendicular to the axis are
+// locked (like FixedJoint, but leaving one rotational degree of freedom
+// open). Useful for anything that swings on a hinge — a deployable solar
+// panel, an antenna boom, a landing leg with a folding joint.
+//
+// The hinge angle is bodyB's rotation relative to bodyA about the axis,
+// zero at construction, and is available via getAngle(). Two optional
+// mechanisms build on top of the bare joint:
+//   - Angle limits (setLimits): a hard mechanical stop, e.g. a panel that
+//     can swing from 0 (stowed) to pi/2 (deployed) and no further.
+//   - A motor (enableMotor): drives the hinge toward a target angular rate,
+//     capped by a max torque — e.g. a deployment spring/motor. Combined
+//     with a limit, the motor drives the hinge open until it reaches the
+//     stop and holds it there.
+// -----------------------------------------------------------------------
+class HingeConstraint : public Constraint
+{
+public:
+  RigidBody *bodyA = nullptr;
+  RigidBody *bodyB = nullptr;
+
+  // Baumgarte stabilisation coefficients.
+  float beta = 0.2f;      // pivot coincidence + axis alignment
+  float limitBeta = 0.2f; // angle limit
+
+  // worldPivot: shared attachment point in world space at construction.
+  // worldAxis: hinge axis in world space at construction (need not be
+  // unit length). Rotation about this axis is left free.
+  HingeConstraint(RigidBody *a, RigidBody *b,
+                  const glm::vec3 &worldPivot,
+                  const glm::vec3 &worldAxis);
+
+  void solve(float dt) override;
+  bool connects(const RigidBody *a, const RigidBody *b) const override;
+  bool involves(const RigidBody *body) const override;
+
+  // Current hinge angle (radians): bodyB's rotation relative to bodyA
+  // about the hinge axis, zero at construction, signed by the right-hand
+  // rule around the axis (in bodyA's current frame).
+  float getAngle() const;
+
+  // Hard mechanical stop on the angle. Disabled (free rotation) until
+  // this is called.
+  void setLimits(float lowerRad, float upperRad);
+  void clearLimits();
+
+  // Simple velocity-servo motor (à la Bullet's btHingeConstraint motor):
+  // drives the hinge's angular rate toward targetSpeed, limited by
+  // maxTorque. Disabled by default.
+  void enableMotor(bool enabled);
+  void setMotorTargetSpeed(float speedRadPerSec);
+  void setMotorMaxTorque(float torqueNm);
+
+private:
+  glm::vec3 localAnchorA;
+  glm::vec3 localAnchorB;
+  glm::vec3 localAxisA;
+  glm::vec3 localAxisB;
+  glm::vec3 localPerpA; // reference vector, perpendicular to the axis, used to measure the angle
+  glm::vec3 localPerpB;
+
+  bool  limitsEnabled = false;
+  float lowerLimit = 0.0f;
+  float upperLimit = 0.0f;
+
+  bool  motorEnabled = false;
+  float motorTargetSpeed = 0.0f;
+  float motorMaxTorque = 0.0f;
+
+  // Current hinge axis in world space (from bodyA's current orientation).
+  glm::vec3 axisWorld() const;
+
+  // Current axis (world space, from bodyA) and signed angle in one pass.
+  void computeAxisAndAngle(glm::vec3 &axisOut, float &angleOut) const;
 };

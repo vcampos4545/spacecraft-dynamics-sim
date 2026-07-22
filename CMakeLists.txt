@@ -77,4 +77,9 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/bars/bars.cpp
   )
   target_link_libraries(bars PRIVATE rigidbody vgl)
+
+  add_executable(solar-panel-deploy
+      examples/solar_panel_deploy/solar_panel_deploy.cpp
+  )
+  target_link_libraries(solar-panel-deploy PRIVATE rigidbody vgl)
 endif()
