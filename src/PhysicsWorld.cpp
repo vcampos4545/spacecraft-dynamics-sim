@@ -269,12 +269,41 @@ void PhysicsWorld::clear()
   constraints.clear();
 }
 
-FixedJoint *PhysicsWorld::addFixedJoint(RigidBody *a, RigidBody *b,
-                                        const glm::vec3 &worldPivot)
+FixedConstraint *PhysicsWorld::addFixedConstraint(RigidBody *a, RigidBody *b,
+                                                  const glm::vec3 &worldPivot)
 {
-  auto joint  = std::make_unique<FixedJoint>(a, b, worldPivot);
-  FixedJoint *ptr = joint.get();
-  constraints.push_back(std::move(joint));
+  auto c  = std::make_unique<FixedConstraint>(a, b, worldPivot);
+  FixedConstraint *ptr = c.get();
+  constraints.push_back(std::move(c));
+  return ptr;
+}
+
+PointConstraint *PhysicsWorld::addPointConstraint(RigidBody *a, RigidBody *b,
+                                                  const glm::vec3 &worldPivot)
+{
+  auto c  = std::make_unique<PointConstraint>(a, b, worldPivot);
+  PointConstraint *ptr = c.get();
+  constraints.push_back(std::move(c));
+  return ptr;
+}
+
+HingeConstraint *PhysicsWorld::addHingeConstraint(RigidBody *a, RigidBody *b,
+                                                  const glm::vec3 &worldPivot,
+                                                  const glm::vec3 &worldAxis)
+{
+  auto hinge  = std::make_unique<HingeConstraint>(a, b, worldPivot, worldAxis);
+  HingeConstraint *ptr = hinge.get();
+  constraints.push_back(std::move(hinge));
+  return ptr;
+}
+
+SliderConstraint *PhysicsWorld::addSliderConstraint(RigidBody *a, RigidBody *b,
+                                                    const glm::vec3 &worldPivot,
+                                                    const glm::vec3 &worldAxis)
+{
+  auto slider  = std::make_unique<SliderConstraint>(a, b, worldPivot, worldAxis);
+  SliderConstraint *ptr = slider.get();
+  constraints.push_back(std::move(slider));
   return ptr;
 }
 
@@ -288,16 +317,6 @@ DistanceConstraint *PhysicsWorld::addDistanceConstraint(RigidBody *a, RigidBody 
                                                   restLength, unilateral);
   DistanceConstraint *ptr = dc.get();
   constraints.push_back(std::move(dc));
-  return ptr;
-}
-
-HingeConstraint *PhysicsWorld::addHingeConstraint(RigidBody *a, RigidBody *b,
-                                                  const glm::vec3 &worldPivot,
-                                                  const glm::vec3 &worldAxis)
-{
-  auto hinge  = std::make_unique<HingeConstraint>(a, b, worldPivot, worldAxis);
-  HingeConstraint *ptr = hinge.get();
-  constraints.push_back(std::move(hinge));
   return ptr;
 }
 

@@ -5,6 +5,32 @@
 #include <utility>
 
 // -----------------------------------------------------------------------
+// Constraint types
+//
+// Four primitives, each locking a specific set of the 6 relative degrees
+// of freedom (3 translational + 3 rotational) between two bodies:
+//
+//   FixedConstraint  — 0 DOF free  (6 removed): point lock + orientation lock
+//   PointConstraint  — 3 DOF free  (3 removed): point lock only
+//   HingeConstraint  — 1 DOF free  (5 removed): point lock + axis alignment
+//   SliderConstraint — 1 DOF free  (5 removed): orientation lock + perpendicular lock
+//
+// They share their underlying math (see the anonymous-namespace solvers in
+// Constraint.cpp): FixedConstraint = PointConstraint + full orientation
+// lock; HingeConstraint = PointConstraint + a 2-DOF axis-alignment lock;
+// SliderConstraint = full orientation lock + a 2-DOF perpendicular
+// translation lock. More elaborate joints can be built the same way two
+// of these primitives combine — e.g. a universal joint is two
+// HingeConstraints sharing a pivot with perpendicular axes, and a
+// cylindrical joint is a Hinge and a Slider sharing an axis — or simply by
+// adding more than one constraint between the same pair of bodies.
+//
+// DistanceConstraint (a rope/strut: anchors held at a target *distance*
+// rather than coincident) is a fifth, distinct constraint kept alongside
+// these four — it isn't expressible as a combination of them.
+// -----------------------------------------------------------------------
+
+// -----------------------------------------------------------------------
 // Abstract constraint base
 // -----------------------------------------------------------------------
 class Constraint
@@ -32,17 +58,14 @@ public:
 };
 
 // -----------------------------------------------------------------------
-// FixedJoint — locks all 6 DOF between bodyA and bodyB.
+// FixedConstraint (Weld) — locks all 6 relative DOF between bodyA and
+// bodyB: relative position (3) and relative orientation (3). Removes all
+// relative motion, as if the two bodies were a single rigid body.
 //
-// At construction the joint captures:
-//   - localAnchorA / localAnchorB : world-space pivot transformed into each
-//     body's local frame (the pivot is the connection point in world space).
-//   - relativeOrientation         : q_A^-1 * q_B  (desired relative rotation).
-//
-// solve() runs one Sequential-Impulse iteration with Baumgarte
-// position-error correction for both translation and rotation.
+// Uses: rocket body <-> nose cone, multi-part static assemblies,
+// spacecraft bus components.
 // -----------------------------------------------------------------------
-class FixedJoint : public Constraint
+class FixedConstraint : public Constraint
 {
 public:
   RigidBody *bodyA = nullptr;
@@ -55,7 +78,7 @@ public:
   // worldPivot: the shared attachment point in world space at the moment
   // the two bodies are first connected (e.g. the top of the rocket cylinder
   // for the nose cone, or the base-rim point for a landing leg).
-  FixedJoint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+  FixedConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
 
   void solve(float dt) override;
   bool connects(const RigidBody *a, const RigidBody *b) const override;
@@ -65,6 +88,35 @@ private:
   glm::vec3 localAnchorA;        // worldPivot in bodyA local frame
   glm::vec3 localAnchorB;        // worldPivot in bodyB local frame
   glm::quat relativeOrientation; // q_A^-1 * q_B at construction
+};
+
+// -----------------------------------------------------------------------
+// PointConstraint (Point-to-Point / Ball Socket) — constrains a pivot
+// point on bodyA to coincide with a pivot point on bodyB (3 DOF removed).
+// Free rotation about the pivot in every direction. One of the most useful
+// primitive constraints — a building block for ropes, chains, ragdolls,
+// and (paired up) universal joints.
+//
+// Uses: rope/chain links, ragdolls, universal-joint building block.
+// -----------------------------------------------------------------------
+class PointConstraint : public Constraint
+{
+public:
+  RigidBody *bodyA = nullptr;
+  RigidBody *bodyB = nullptr;
+
+  float beta = 0.2f;
+
+  // worldPivot: the shared attachment point in world space at construction.
+  PointConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+
+  void solve(float dt) override;
+  bool connects(const RigidBody *a, const RigidBody *b) const override;
+  bool involves(const RigidBody *body) const override;
+
+private:
+  glm::vec3 localAnchorA;
+  glm::vec3 localAnchorB;
 };
 
 // -----------------------------------------------------------------------
@@ -110,12 +162,10 @@ private:
 };
 
 // -----------------------------------------------------------------------
-// HingeConstraint — a 1-DOF revolute joint. bodyA and bodyB share a pivot
-// point and rotate freely relative to each other about a common axis;
-// translation and the two rotational DOF perpendicular to the axis are
-// locked (like FixedJoint, but leaving one rotational degree of freedom
-// open). Useful for anything that swings on a hinge — a deployable solar
-// panel, an antenna boom, a landing leg with a folding joint.
+// HingeConstraint (Revolute) — a 1-DOF joint. bodyA and bodyB share a
+// pivot point and rotate freely relative to each other about a common
+// axis; the pivot (3 DOF) and the two rotational DOF perpendicular to the
+// axis are locked, removing 5 of the 6 relative DOF.
 //
 // The hinge angle is bodyB's rotation relative to bodyA about the axis,
 // zero at construction, and is available via getAngle(). Two optional
@@ -126,6 +176,8 @@ private:
 //     capped by a max torque — e.g. a deployment spring/motor. Combined
 //     with a limit, the motor drives the hinge open until it reaches the
 //     stop and holds it there.
+//
+// Uses: doors, solar panels, wheels, bearings, robot joints.
 // -----------------------------------------------------------------------
 class HingeConstraint : public Constraint
 {
@@ -186,4 +238,71 @@ private:
 
   // Current axis (world space, from bodyA) and signed angle in one pass.
   void computeAxisAndAngle(glm::vec3 &axisOut, float &angleOut) const;
+};
+
+// -----------------------------------------------------------------------
+// SliderConstraint (Prismatic) — a 1-DOF joint allowing translation along
+// a single shared axis and nothing else: relative orientation (3 DOF) and
+// the two translational DOF perpendicular to the axis are locked,
+// removing 5 of the 6 relative DOF.
+//
+// The slide position is bodyB's anchor displaced from bodyA's anchor along
+// the axis, zero at construction, available via getPosition(). As with
+// HingeConstraint, optional limits (setLimits, a hard travel stop) and a
+// motor (enableMotor, a velocity-servo linear actuator) build on the bare
+// joint.
+//
+// Uses: pistons, telescoping antennas/booms, linear actuators.
+// -----------------------------------------------------------------------
+class SliderConstraint : public Constraint
+{
+public:
+  RigidBody *bodyA = nullptr;
+  RigidBody *bodyB = nullptr;
+
+  float beta = 0.2f;      // orientation lock + perpendicular-translation lock
+  float limitBeta = 0.2f; // position limit
+
+  // worldPivot: shared reference point in world space at construction.
+  // worldAxis: slide axis in world space at construction (need not be
+  // unit length). Translation along this axis is left free; relative
+  // orientation is locked to whatever it is at construction.
+  SliderConstraint(RigidBody *a, RigidBody *b,
+                   const glm::vec3 &worldPivot,
+                   const glm::vec3 &worldAxis);
+
+  void solve(float dt) override;
+  bool connects(const RigidBody *a, const RigidBody *b) const override;
+  bool involves(const RigidBody *body) const override;
+
+  // Current slide position (meters): bodyB's anchor displaced from
+  // bodyA's anchor along the axis, zero at construction.
+  float getPosition() const;
+
+  // Hard mechanical stop on the slide position (travel limits). Disabled
+  // (free sliding) until this is called.
+  void setLimits(float lowerM, float upperM);
+  void clearLimits();
+
+  // Simple velocity-servo motor: drives the slide rate toward targetSpeed,
+  // limited by maxForce. Disabled by default.
+  void enableMotor(bool enabled);
+  void setMotorTargetSpeed(float speedMPerSec);
+  void setMotorMaxForce(float forceN);
+
+private:
+  glm::vec3 localAnchorA;
+  glm::vec3 localAnchorB;
+  glm::vec3 localAxisA;
+  glm::quat relativeOrientation;
+
+  bool  limitsEnabled = false;
+  float lowerLimit = 0.0f;
+  float upperLimit = 0.0f;
+
+  bool  motorEnabled = false;
+  float motorTargetSpeed = 0.0f;
+  float motorMaxForce = 0.0f;
+
+  glm::vec3 axisWorld() const;
 };

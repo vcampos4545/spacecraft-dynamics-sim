@@ -6,7 +6,7 @@ It gives you:
 
 - **`RigidBody`** — box/sphere/cylinder/cone shapes, mass & inertia computed from density or mass, GJK+EPA convex collision, ground contact
 - **`PhysicsWorld`** — fixed-timestep stepping (120 Hz internally, accumulator-driven), body-body and ground collision resolution, constraint solving
-- **`Constraint`** — `FixedJoint` (locks all 6 DOF between two bodies, e.g. a nose cone bolted to a rocket), `DistanceConstraint` (a rope/strut, optionally unilateral like a string), and `HingeConstraint` (a 1-DOF revolute joint with an optional angle limit and motor, e.g. a deployable solar panel)
+- **`Constraint`** — four primitives, each locking a specific set of the 6 relative degrees of freedom between two bodies: `FixedConstraint` (Weld — locks all 6, e.g. a nose cone bolted to a rocket), `PointConstraint` (Point-to-Point / Ball Socket — locks the 3 translational DOF, free rotation), `HingeConstraint` (Revolute — 1 free rotational DOF, with an optional angle limit and motor, e.g. a deployable solar panel), and `SliderConstraint` (Prismatic — 1 free translational DOF, with the same limit/motor pattern, e.g. a piston). They share their underlying math, so more elaborate joints can be built by combining them — a universal joint is two `HingeConstraint`s sharing a pivot, for instance. `DistanceConstraint` (a rope/strut held at a target distance rather than coincident, optionally unilateral like a string) is a fifth, distinct constraint kept alongside these four.
 - **Actuators**, as `ForceGenerator`s attached to a body — `ReactionWheel` (torque + saturation) and `Thruster` (gimbaled, throttled)
 
 See [`examples/`](examples/) for complete simulations that show how the pieces fit together — including a full attitude-control flight-software stack for the cubesat.
@@ -14,9 +14,11 @@ See [`examples/`](examples/) for complete simulations that show how the pieces f
 | Example                                                     | What it demonstrates                                                                                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`cubesat`](examples/cubesat/)                                | A 1U cubesat with 3-axis reaction wheels, driven by scenario-owned FSW (`ADCS.h/.cpp` + `Controllers.h/.cpp`: guidance → PID/LQR/cascaded control → wheel torque allocation) |
-| [`falcon9`](examples/falcon9/)                                | A multi-body rocket (cylinder + nose cone + 4 landing legs, connected with `FixedJoint`s) with gimbaled `Thruster`s and an inline guidance controller                       |
+| [`falcon9`](examples/falcon9/)                                | A multi-body rocket (cylinder + nose cone + 4 landing legs, connected with `FixedConstraint`s) with gimbaled `Thruster`s and an inline guidance controller                  |
 | [`bars`](examples/bars/)                                      | A 5-level Calder mobile built entirely from `DistanceConstraint` — no flight software, just constraints                                                                     |
 | [`solar_panel_deploy`](examples/solar_panel_deploy/)          | Two panels hinged to a bus with `HingeConstraint`, each independently deployable (press 1 / 2) via a motor driving against an angle limit                                   |
+| [`chain`](examples/chain/)                                    | A rigid multi-link chain built from `PointConstraint`s, released from a swept-back pose to swing freely under gravity                                                       |
+| [`telescoping_boom`](examples/telescoping_boom/)              | An antenna boom on a `SliderConstraint`, driven continuously by the operator (hold Up/Down) rather than deploying once to a limit                                           |
 
 ## Dependencies
 

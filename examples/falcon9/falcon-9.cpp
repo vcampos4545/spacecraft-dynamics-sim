@@ -142,7 +142,7 @@ int main()
   // World pivot = junction between rocket top and cone base
   glm::vec3 noseJunction{0.0f, 0.0f,
                          rocket->position.z + FALCON_NINE_HEIGHT * 0.5f};
-  world.addFixedJoint(rocket, noseCone, noseJunction);
+  FixedConstraint *noseWeld = world.addFixedConstraint(rocket, noseCone, noseJunction);
 
   // ---- Landing legs (4 x BOX rigid bodies) ----------------------------
   // Each leg runs from a point on the rocket base-rim outward & downward.
@@ -183,7 +183,7 @@ int main()
     legs[i]->position = (attach + tip) * 0.5f;
     legs[i]->orientation = legOrient;
 
-    world.addFixedJoint(rocket, legs[i], attach);
+    world.addFixedConstraint(rocket, legs[i], attach);
   }
 
   // ---- Merlin engines -------------------------------------------------
@@ -264,6 +264,13 @@ int main()
     {
       for (auto &t : merlins)
         t.apply(*rocket, 1.0f); // full throttle
+    }
+
+    // Stage rocket (jettison the nose cone by removing its weld)
+    if (noseWeld && gui.isKeyJustPressed(GLFW_KEY_1))
+    {
+      world.removeConstraint(noseWeld);
+      noseWeld = nullptr;
     }
 
     // -- Simulate -------------------------------------------------------

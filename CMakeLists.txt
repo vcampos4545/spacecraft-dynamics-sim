@@ -82,4 +82,14 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/solar_panel_deploy/solar_panel_deploy.cpp
   )
   target_link_libraries(solar-panel-deploy PRIVATE rigidbody vgl)
+
+  add_executable(chain
+      examples/chain/chain.cpp
+  )
+  target_link_libraries(chain PRIVATE rigidbody vgl)
+
+  add_executable(telescoping-boom
+      examples/telescoping_boom/telescoping_boom.cpp
+  )
+  target_link_libraries(telescoping-boom PRIVATE rigidbody vgl)
 endif()

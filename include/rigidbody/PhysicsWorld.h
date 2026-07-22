@@ -23,16 +23,20 @@ public:
   void removeBody(RigidBody *body);
   void clear();
 
-  // Constraint management
-  FixedJoint        *addFixedJoint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+  // Constraint management — see Constraint.h for what each removes/allows.
+  FixedConstraint  *addFixedConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+  PointConstraint  *addPointConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot);
+  HingeConstraint  *addHingeConstraint(RigidBody *a, RigidBody *b,
+                                       const glm::vec3 &worldPivot,
+                                       const glm::vec3 &worldAxis);
+  SliderConstraint *addSliderConstraint(RigidBody *a, RigidBody *b,
+                                        const glm::vec3 &worldPivot,
+                                        const glm::vec3 &worldAxis);
   DistanceConstraint *addDistanceConstraint(RigidBody *a, RigidBody *b,
                                             const glm::vec3 &worldPivotA,
                                             const glm::vec3 &worldPivotB,
                                             float restLength,
                                             bool unilateral = false);
-  HingeConstraint    *addHingeConstraint(RigidBody *a, RigidBody *b,
-                                         const glm::vec3 &worldPivot,
-                                         const glm::vec3 &worldAxis);
 
   void removeConstraint(Constraint *constraint);
 

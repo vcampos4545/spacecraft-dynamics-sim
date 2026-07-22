@@ -5,7 +5,13 @@
 #include <algorithm>
 
 // -----------------------------------------------------------------------
-// Shared helpers (used by FixedJoint, DistanceConstraint, HingeConstraint)
+// Shared math + constraint building blocks.
+//
+// Each of FixedConstraint / PointConstraint / HingeConstraint /
+// SliderConstraint is assembled from these. They operate directly on a
+// pair of RigidBody velocities (one Sequential-Impulse iteration each),
+// so composing several of them in a single solve() composes the DOF locks
+// they each remove.
 // -----------------------------------------------------------------------
 namespace {
 
@@ -27,10 +33,22 @@ glm::mat3 skew(const glm::vec3 &v)
 
 // Solve 3x3 linear system A*x = b via Cramer's rule.
 // Returns zero if A is (near-)singular.
+//
+// The singularity check is scale-relative, not absolute: these A matrices
+// are sums of invMass/invInertia terms, whose *absolute* magnitude depends
+// entirely on the masses involved. A rocket's inverse inertia is ~1e-6 in
+// SI units, not because anything is degenerate but because it's a 500-tonne
+// object — an absolute epsilon like 1e-10 would (and did) misfire on a
+// perfectly well-conditioned matrix at that scale, silently zeroing out an
+// entire constraint. Comparing det against the cube of A's own largest
+// diagonal entry keeps the check meaningful across mass scales.
 glm::vec3 solve3(const glm::mat3 &A, const glm::vec3 &b)
 {
   float det = glm::determinant(A);
-  if (std::abs(det) < 1e-10f) return glm::vec3(0.0f);
+
+  float scale = std::max({std::abs(A[0][0]), std::abs(A[1][1]), std::abs(A[2][2])});
+  if (scale < 1e-30f) return glm::vec3(0.0f); // A is (numerically) the zero matrix
+  if (std::abs(det) < 1e-9f * scale * scale * scale) return glm::vec3(0.0f);
 
   glm::mat3 Ax = A; Ax[0] = b; // replace column 0
   glm::mat3 Ay = A; Ay[1] = b; // replace column 1
@@ -51,27 +69,292 @@ glm::vec3 anyPerpendicular(const glm::vec3 &axis)
   return glm::normalize(glm::cross(a, ref));
 }
 
+// Baumgarte position-error caps (matches Box2D's b2_maxLinearCorrection
+// convention). A Baumgarte bias scales the *raw* position error by
+// beta/dt (tens, with the defaults) to compute a corrective velocity —
+// fine for the small errors these constraints normally run at, but with
+// no cap, a large transient error (e.g. under a big torque, or between two
+// bodies whose masses/inertias differ by orders of magnitude, as a rocket
+// and its nose cone do) turns into a corrective velocity large enough to
+// overshoot, producing a *bigger* error next step: an unstable feedback
+// loop, not a convergence. Clamping the error before scaling means a big
+// error still gets corrected — just gradually, over multiple steps,
+// instead of in one (impossible) instant.
+constexpr float MAX_LINEAR_CORRECTION  = 0.2f; // meters
+constexpr float MAX_ANGULAR_CORRECTION = 0.2f; // radians (~11 degrees)
+
+glm::vec3 clampLength(const glm::vec3 &v, float maxLen)
+{
+  float len = glm::length(v);
+  return (len > maxLen && len > 1e-9f) ? v * (maxLen / len) : v;
+}
+
+// ---- 3-DOF blocks -------------------------------------------------------
+
+// Locks two anchor points to coincide (3 DOF). rA/rB are the world-space
+// offsets from each body's center of mass to its anchor point. Used by
+// FixedConstraint, PointConstraint, HingeConstraint.
+void solvePointConstraint(RigidBody &a, RigidBody &b,
+                          const glm::vec3 &rA, const glm::vec3 &rB,
+                          const glm::mat3 &invIA, const glm::mat3 &invIB,
+                          float beta, float dt)
+{
+  glm::vec3 posError = (b.position + rB) - (a.position + rA);
+
+  glm::vec3 velA   = a.velocity + glm::cross(a.angularVelocity, rA);
+  glm::vec3 velB   = b.velocity + glm::cross(b.angularVelocity, rB);
+  glm::vec3 relVel = velA - velB;
+
+  // K = (mA_inv + mB_inv)*I3 - skew(rA)*invIA*skew(rA)^T
+  //                           - skew(rB)*invIB*skew(rB)^T
+  // skew(r)^T = -skew(r), so  -skew(r)*invI*skew(r)^T = skew(r)*invI*skew(r)
+  glm::mat3 sA = skew(rA);
+  glm::mat3 sB = skew(rB);
+  glm::mat3 K  = (a.invMass + b.invMass) * glm::mat3(1.0f)
+               + sA * invIA * glm::transpose(sA)
+               + sB * invIB * glm::transpose(sB);
+
+  glm::vec3 rhs    = -(relVel - (beta / dt) * clampLength(posError, MAX_LINEAR_CORRECTION));
+  glm::vec3 lambda = solve3(K, rhs);
+
+  a.velocity        += a.invMass * lambda;
+  b.velocity        -= b.invMass * lambda;
+  a.angularVelocity += invIA * glm::cross(rA, lambda);
+  b.angularVelocity -= invIB * glm::cross(rB, lambda);
+}
+
+// Locks relative orientation to `relativeOrientation` (q_A^-1*q_B target at
+// construction), fully removing all 3 rotational DOF. Used by
+// FixedConstraint, SliderConstraint.
+void solveOrientationConstraint(RigidBody &a, RigidBody &b,
+                                const glm::quat &relativeOrientation,
+                                const glm::mat3 &invIA, const glm::mat3 &invIB,
+                                float beta, float dt)
+{
+  glm::mat3 RA = glm::toMat3(a.orientation);
+
+  glm::quat q_err = glm::inverse(a.orientation) * b.orientation * glm::inverse(relativeOrientation);
+  if (q_err.w < 0.0f) q_err = -q_err; // shortest-path convention
+
+  glm::vec3 angPosError = 2.0f * RA * glm::vec3(q_err.x, q_err.y, q_err.z);
+  glm::vec3 relAngVel   = a.angularVelocity - b.angularVelocity;
+
+  glm::mat3 K_ang   = invIA + invIB;
+  glm::vec3 rhs_ang = -(relAngVel - (beta / dt) * clampLength(angPosError, MAX_ANGULAR_CORRECTION));
+  glm::vec3 lam_ang = solve3(K_ang, rhs_ang);
+
+  a.angularVelocity += invIA * lam_ang;
+  b.angularVelocity -= invIB * lam_ang;
+}
+
+// ---- 2-DOF blocks (a 3-DOF block above, relaxed along one axis) --------
+
+// Locks 2 rotational DOF by aligning `axis` (from bodyA) with `axisB`
+// (from bodyB), leaving rotation about the shared axis free. To first
+// order this axis-misalignment vector already lies in the plane
+// perpendicular to the axis, and the solved impulse is re-projected onto
+// that plane too, so this never resists spin about the axis itself even
+// with a non-isotropic inertia tensor. Used by HingeConstraint.
+void solveAxisAlignmentConstraint(RigidBody &a, RigidBody &b,
+                                  const glm::vec3 &axis, const glm::vec3 &axisB,
+                                  const glm::mat3 &invIA, const glm::mat3 &invIB,
+                                  float beta, float dt)
+{
+  glm::vec3 angPosError = glm::cross(axis, axisB);
+
+  glm::vec3 relAngVel     = a.angularVelocity - b.angularVelocity;
+  glm::vec3 relAngVelPerp = relAngVel - axis * glm::dot(relAngVel, axis);
+
+  glm::mat3 K_ang   = invIA + invIB;
+  glm::vec3 rhs_ang = -(relAngVelPerp - (beta / dt) * clampLength(angPosError, MAX_ANGULAR_CORRECTION));
+  glm::vec3 lam_ang = solve3(K_ang, rhs_ang);
+
+  lam_ang -= axis * glm::dot(lam_ang, axis);
+
+  a.angularVelocity += invIA * lam_ang;
+  b.angularVelocity -= invIB * lam_ang;
+}
+
+// Locks 2 translational DOF perpendicular to `axis`, leaving translation
+// along the axis free (same relax-along-one-axis technique as the axis
+// alignment block above, applied to the point constraint instead). Used
+// by SliderConstraint.
+void solvePerpendicularConstraint(RigidBody &a, RigidBody &b,
+                                  const glm::vec3 &rA, const glm::vec3 &rB,
+                                  const glm::vec3 &axis,
+                                  const glm::mat3 &invIA, const glm::mat3 &invIB,
+                                  float beta, float dt)
+{
+  glm::vec3 posErrorFull = (b.position + rB) - (a.position + rA);
+  glm::vec3 posError     = posErrorFull - axis * glm::dot(posErrorFull, axis);
+
+  glm::vec3 velA        = a.velocity + glm::cross(a.angularVelocity, rA);
+  glm::vec3 velB        = b.velocity + glm::cross(b.angularVelocity, rB);
+  glm::vec3 relVelFull  = velA - velB;
+  glm::vec3 relVel      = relVelFull - axis * glm::dot(relVelFull, axis);
+
+  glm::mat3 sA = skew(rA);
+  glm::mat3 sB = skew(rB);
+  glm::mat3 K  = (a.invMass + b.invMass) * glm::mat3(1.0f)
+               + sA * invIA * glm::transpose(sA)
+               + sB * invIB * glm::transpose(sB);
+
+  glm::vec3 rhs    = -(relVel - (beta / dt) * clampLength(posError, MAX_LINEAR_CORRECTION));
+  glm::vec3 lambda = solve3(K, rhs);
+  lambda -= axis * glm::dot(lambda, axis); // keep along-axis translation free
+
+  a.velocity        += a.invMass * lambda;
+  b.velocity        -= b.invMass * lambda;
+  a.angularVelocity += invIA * glm::cross(rA, lambda);
+  b.angularVelocity -= invIB * glm::cross(rB, lambda);
+}
+
+// ---- 1-DOF limit/motor blocks -------------------------------------------
+//
+// Both pairs below share the same hard-stop / velocity-servo formulas —
+// the angular pair applies a pure torque impulse along `axis`; the linear
+// pair applies a force impulse at the anchor offsets (which also couples
+// into angular velocity via the lever arm, like solvePointConstraint's
+// lambda does). Used by HingeConstraint (angular) and SliderConstraint
+// (linear).
+
+void solveAngularLimit(RigidBody &a, RigidBody &b, const glm::vec3 &axis,
+                       const glm::mat3 &invIA, const glm::mat3 &invIB,
+                       float value, float lower, float upper,
+                       float beta, float dt)
+{
+  float Kscalar = glm::dot(axis, invIA * axis) + glm::dot(axis, invIB * axis);
+  if (Kscalar < 1e-10f) return;
+
+  float relAxisVel = glm::dot(a.angularVelocity - b.angularVelocity, axis);
+
+  float s;
+  if (value > upper)
+  {
+    float C = std::min(value - upper, MAX_ANGULAR_CORRECTION);
+    s = (-relAxisVel + (beta / dt) * C) / Kscalar;
+  }
+  else if (value < lower)
+  {
+    float C = std::min(lower - value, MAX_ANGULAR_CORRECTION);
+    s = -(relAxisVel + (beta / dt) * C) / Kscalar;
+  }
+  else
+  {
+    return;
+  }
+
+  glm::vec3 impulse = s * axis;
+  a.angularVelocity += invIA * impulse;
+  b.angularVelocity -= invIB * impulse;
+}
+
+void solveAngularMotor(RigidBody &a, RigidBody &b, const glm::vec3 &axis,
+                       const glm::mat3 &invIA, const glm::mat3 &invIB,
+                       float targetRate, float maxTorque, float dt)
+{
+  float Kscalar = glm::dot(axis, invIA * axis) + glm::dot(axis, invIB * axis);
+  if (Kscalar < 1e-10f) return;
+
+  float relAxisVel = glm::dot(a.angularVelocity - b.angularVelocity, axis);
+  float rateNow     = -relAxisVel;
+
+  float s = (rateNow - targetRate) / Kscalar;
+  float maxImpulse = maxTorque * dt;
+  s = glm::clamp(s, -maxImpulse, maxImpulse);
+
+  glm::vec3 impulse = s * axis;
+  a.angularVelocity += invIA * impulse;
+  b.angularVelocity -= invIB * impulse;
+}
+
+void solveLinearLimit(RigidBody &a, RigidBody &b,
+                      const glm::vec3 &rA, const glm::vec3 &rB, const glm::vec3 &axis,
+                      const glm::mat3 &invIA, const glm::mat3 &invIB,
+                      float value, float lower, float upper,
+                      float beta, float dt)
+{
+  glm::vec3 rAxN = glm::cross(rA, axis);
+  glm::vec3 rBxN = glm::cross(rB, axis);
+  float Kscalar  = a.invMass + b.invMass
+                 + glm::dot(rAxN, invIA * rAxN)
+                 + glm::dot(rBxN, invIB * rBxN);
+  if (Kscalar < 1e-10f) return;
+
+  glm::vec3 velA = a.velocity + glm::cross(a.angularVelocity, rA);
+  glm::vec3 velB = b.velocity + glm::cross(b.angularVelocity, rB);
+  float relAxisVel = glm::dot(velA - velB, axis);
+
+  float s;
+  if (value > upper)
+  {
+    float C = std::min(value - upper, MAX_LINEAR_CORRECTION);
+    s = (-relAxisVel + (beta / dt) * C) / Kscalar;
+  }
+  else if (value < lower)
+  {
+    float C = std::min(lower - value, MAX_LINEAR_CORRECTION);
+    s = -(relAxisVel + (beta / dt) * C) / Kscalar;
+  }
+  else
+  {
+    return;
+  }
+
+  glm::vec3 impulse = s * axis;
+  a.velocity        += a.invMass * impulse;
+  b.velocity        -= b.invMass * impulse;
+  a.angularVelocity += invIA * glm::cross(rA, impulse);
+  b.angularVelocity -= invIB * glm::cross(rB, impulse);
+}
+
+void solveLinearMotor(RigidBody &a, RigidBody &b,
+                      const glm::vec3 &rA, const glm::vec3 &rB, const glm::vec3 &axis,
+                      const glm::mat3 &invIA, const glm::mat3 &invIB,
+                      float targetRate, float maxForce, float dt)
+{
+  glm::vec3 rAxN = glm::cross(rA, axis);
+  glm::vec3 rBxN = glm::cross(rB, axis);
+  float Kscalar  = a.invMass + b.invMass
+                 + glm::dot(rAxN, invIA * rAxN)
+                 + glm::dot(rBxN, invIB * rBxN);
+  if (Kscalar < 1e-10f) return;
+
+  glm::vec3 velA = a.velocity + glm::cross(a.angularVelocity, rA);
+  glm::vec3 velB = b.velocity + glm::cross(b.angularVelocity, rB);
+  float relAxisVel = glm::dot(velA - velB, axis);
+  float rateNow     = -relAxisVel;
+
+  float s = (rateNow - targetRate) / Kscalar;
+  float maxImpulse = maxForce * dt;
+  s = glm::clamp(s, -maxImpulse, maxImpulse);
+
+  glm::vec3 impulse = s * axis;
+  a.velocity        += a.invMass * impulse;
+  b.velocity        -= b.invMass * impulse;
+  a.angularVelocity += invIA * glm::cross(rA, impulse);
+  b.angularVelocity -= invIB * glm::cross(rB, impulse);
+}
+
 } // anonymous namespace
 
 // -----------------------------------------------------------------------
-// FixedJoint
+// FixedConstraint
 // -----------------------------------------------------------------------
 
-FixedJoint::FixedJoint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot)
+FixedConstraint::FixedConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot)
     : bodyA(a), bodyB(b)
 {
   glm::mat3 RA = glm::toMat3(a->orientation);
   glm::mat3 RB = glm::toMat3(b->orientation);
 
-  // Store pivot in each body's local frame
   localAnchorA = glm::transpose(RA) * (worldPivot - a->position);
   localAnchorB = glm::transpose(RB) * (worldPivot - b->position);
 
-  // Capture relative orientation: q_A^-1 * q_B
   relativeOrientation = glm::inverse(a->orientation) * b->orientation;
 }
 
-void FixedJoint::solve(float dt)
+void FixedConstraint::solve(float dt)
 {
   if (!bodyA || !bodyB) return;
 
@@ -80,69 +363,58 @@ void FixedJoint::solve(float dt)
   glm::mat3 invIA = worldInvI(*bodyA);
   glm::mat3 invIB = worldInvI(*bodyB);
 
-  // World-space vectors from body CoM to the pivot
   glm::vec3 rA = RA * localAnchorA;
   glm::vec3 rB = RB * localAnchorB;
 
-  // ---- Translational constraint (3 DOF) --------------------------------
-
-  // Positional error: target anchorA_world == anchorB_world
-  glm::vec3 posError = (bodyB->position + rB) - (bodyA->position + rA);
-
-  // Relative velocity at pivot
-  glm::vec3 velA   = bodyA->velocity + glm::cross(bodyA->angularVelocity, rA);
-  glm::vec3 velB   = bodyB->velocity + glm::cross(bodyB->angularVelocity, rB);
-  glm::vec3 relVel = velA - velB;
-
-  // 3×3 effective mass matrix:
-  //   K = (mA_inv + mB_inv)*I3 - skew(rA)*invIA*skew(rA)^T
-  //                             - skew(rB)*invIB*skew(rB)^T
-  // skew(r)^T = -skew(r), so  -skew(r)*invI*skew(r)^T = skew(r)*invI*skew(r)
-  glm::mat3 sA = skew(rA);
-  glm::mat3 sB = skew(rB);
-  glm::mat3 K  = (bodyA->invMass + bodyB->invMass) * glm::mat3(1.0f)
-               + sA * invIA * glm::transpose(sA)
-               + sB * invIB * glm::transpose(sB);
-
-  // RHS: -(relVel + baumgarte bias)
-  glm::vec3 rhs    = -(relVel - (beta / dt) * posError);
-  glm::vec3 lambda = solve3(K, rhs);
-
-  bodyA->velocity        += bodyA->invMass * lambda;
-  bodyB->velocity        -= bodyB->invMass * lambda;
-  bodyA->angularVelocity += invIA * glm::cross(rA, lambda);
-  bodyB->angularVelocity -= invIB * glm::cross(rB, lambda);
-
-  // ---- Rotational constraint (3 DOF) -----------------------------------
-
-  // Orientation error: q_err = (q_A^-1 * q_B) * relativeOrientation^-1
-  glm::quat q_err = glm::inverse(bodyA->orientation)
-                  * bodyB->orientation
-                  * glm::inverse(relativeOrientation);
-
-  if (q_err.w < 0.0f) q_err = -q_err; // shortest-path convention
-
-  // Angular positional error in world space
-  glm::vec3 angPosError = 2.0f * RA * glm::vec3(q_err.x, q_err.y, q_err.z);
-
-  // Relative angular velocity
-  glm::vec3 relAngVel = bodyA->angularVelocity - bodyB->angularVelocity;
-
-  // Angular effective mass: K_ang = invIA_world + invIB_world
-  glm::mat3 K_ang   = invIA + invIB;
-  glm::vec3 rhs_ang = -(relAngVel - (beta / dt) * angPosError);
-  glm::vec3 lam_ang = solve3(K_ang, rhs_ang);
-
-  bodyA->angularVelocity += invIA * lam_ang;
-  bodyB->angularVelocity -= invIB * lam_ang;
+  solvePointConstraint(*bodyA, *bodyB, rA, rB, invIA, invIB, beta, dt);
+  solveOrientationConstraint(*bodyA, *bodyB, relativeOrientation, invIA, invIB, beta, dt);
 }
 
-bool FixedJoint::connects(const RigidBody *a, const RigidBody *b) const
+bool FixedConstraint::connects(const RigidBody *a, const RigidBody *b) const
 {
   return (bodyA == a && bodyB == b) || (bodyA == b && bodyB == a);
 }
 
-bool FixedJoint::involves(const RigidBody *body) const
+bool FixedConstraint::involves(const RigidBody *body) const
+{
+  return bodyA == body || bodyB == body;
+}
+
+// -----------------------------------------------------------------------
+// PointConstraint
+// -----------------------------------------------------------------------
+
+PointConstraint::PointConstraint(RigidBody *a, RigidBody *b, const glm::vec3 &worldPivot)
+    : bodyA(a), bodyB(b)
+{
+  glm::mat3 RA = glm::toMat3(a->orientation);
+  glm::mat3 RB = glm::toMat3(b->orientation);
+
+  localAnchorA = glm::transpose(RA) * (worldPivot - a->position);
+  localAnchorB = glm::transpose(RB) * (worldPivot - b->position);
+}
+
+void PointConstraint::solve(float dt)
+{
+  if (!bodyA || !bodyB) return;
+
+  glm::mat3 RA    = glm::toMat3(bodyA->orientation);
+  glm::mat3 RB    = glm::toMat3(bodyB->orientation);
+  glm::mat3 invIA = worldInvI(*bodyA);
+  glm::mat3 invIB = worldInvI(*bodyB);
+
+  glm::vec3 rA = RA * localAnchorA;
+  glm::vec3 rB = RB * localAnchorB;
+
+  solvePointConstraint(*bodyA, *bodyB, rA, rB, invIA, invIB, beta, dt);
+}
+
+bool PointConstraint::connects(const RigidBody *a, const RigidBody *b) const
+{
+  return (bodyA == a && bodyB == b) || (bodyA == b && bodyB == a);
+}
+
+bool PointConstraint::involves(const RigidBody *body) const
 {
   return bodyA == body || bodyB == body;
 }
@@ -379,98 +651,115 @@ void HingeConstraint::solve(float dt)
   glm::vec3 rA = RA * localAnchorA;
   glm::vec3 rB = RB * localAnchorB;
 
-  // ---- Point constraint (3 DOF): pivots coincide ------------------------
-  // Identical in form to FixedJoint's translational solve.
-  {
-    glm::vec3 posError = (bodyB->position + rB) - (bodyA->position + rA);
+  solvePointConstraint(*bodyA, *bodyB, rA, rB, invIA, invIB, beta, dt);
 
-    glm::vec3 velA   = bodyA->velocity + glm::cross(bodyA->angularVelocity, rA);
-    glm::vec3 velB   = bodyB->velocity + glm::cross(bodyB->angularVelocity, rB);
-    glm::vec3 relVel = velA - velB;
+  glm::vec3 axis  = glm::normalize(RA * localAxisA);
+  glm::vec3 axisB = glm::normalize(RB * localAxisB);
+  solveAxisAlignmentConstraint(*bodyA, *bodyB, axis, axisB, invIA, invIB, beta, dt);
 
-    glm::mat3 sA = skew(rA);
-    glm::mat3 sB = skew(rB);
-    glm::mat3 K  = (bodyA->invMass + bodyB->invMass) * glm::mat3(1.0f)
-                 + sA * invIA * glm::transpose(sA)
-                 + sB * invIB * glm::transpose(sB);
-
-    glm::vec3 rhs    = -(relVel - (beta / dt) * posError);
-    glm::vec3 lambda = solve3(K, rhs);
-
-    bodyA->velocity        += bodyA->invMass * lambda;
-    bodyB->velocity        -= bodyB->invMass * lambda;
-    bodyA->angularVelocity += invIA * glm::cross(rA, lambda);
-    bodyB->angularVelocity -= invIB * glm::cross(rB, lambda);
-  }
-
-  // ---- Axis-alignment constraint (2 DOF): leaves rotation about the ----
-  // ---- hinge axis free ---------------------------------------------------
-  glm::vec3 axis = glm::normalize(RA * localAxisA);
-  {
-    glm::vec3 axisB = glm::normalize(RB * localAxisB);
-
-    // Small-angle axis-misalignment vector: zero when axisB == axis, and
-    // (to first order) lies entirely in the plane perpendicular to the
-    // axis — so, unlike FixedJoint's full quaternion error, this never
-    // has a component that resists spin about the hinge axis itself.
-    glm::vec3 angPosError = glm::cross(axis, axisB);
-
-    glm::vec3 relAngVel     = bodyA->angularVelocity - bodyB->angularVelocity;
-    glm::vec3 relAngVelPerp = relAngVel - axis * glm::dot(relAngVel, axis);
-
-    glm::mat3 K_ang   = invIA + invIB;
-    glm::vec3 rhs_ang = -(relAngVelPerp - (beta / dt) * angPosError);
-    glm::vec3 lam_ang = solve3(K_ang, rhs_ang);
-
-    // Re-project the solved impulse: guarantees no torque is ever applied
-    // along the hinge axis, even with a non-isotropic inertia tensor.
-    lam_ang -= axis * glm::dot(lam_ang, axis);
-
-    bodyA->angularVelocity += invIA * lam_ang;
-    bodyB->angularVelocity -= invIB * lam_ang;
-  }
-
-  float Kscalar = glm::dot(axis, invIA * axis) + glm::dot(axis, invIB * axis);
-  if (Kscalar < 1e-10f) return;
-
-  // ---- Angle limit (hard stop, 1 DOF along the axis) ---------------------
   if (limitsEnabled)
-  {
-    float angle = getAngle();
-    float relAngVelAxis = glm::dot(bodyA->angularVelocity - bodyB->angularVelocity, axis);
+    solveAngularLimit(*bodyA, *bodyB, axis, invIA, invIB, getAngle(), lowerLimit, upperLimit, limitBeta, dt);
 
-    float s = 0.0f;
-    if (angle > upperLimit)
-    {
-      float C = angle - upperLimit;
-      s = (-relAngVelAxis + (limitBeta / dt) * C) / Kscalar;
-    }
-    else if (angle < lowerLimit)
-    {
-      float C = lowerLimit - angle;
-      s = -(relAngVelAxis + (limitBeta / dt) * C) / Kscalar;
-    }
-
-    if (s != 0.0f)
-    {
-      glm::vec3 impulse = s * axis;
-      bodyA->angularVelocity += invIA * impulse;
-      bodyB->angularVelocity -= invIB * impulse;
-    }
-  }
-
-  // ---- Motor (velocity servo, 1 DOF along the axis) ----------------------
   if (motorEnabled)
-  {
-    float relAngVelAxis = glm::dot(bodyA->angularVelocity - bodyB->angularVelocity, axis);
-    float angleRateNow  = -relAngVelAxis;
+    solveAngularMotor(*bodyA, *bodyB, axis, invIA, invIB, motorTargetSpeed, motorMaxTorque, dt);
+}
 
-    float s = (angleRateNow - motorTargetSpeed) / Kscalar;
-    float maxImpulse = motorMaxTorque * dt;
-    s = glm::clamp(s, -maxImpulse, maxImpulse);
+// -----------------------------------------------------------------------
+// SliderConstraint
+// -----------------------------------------------------------------------
 
-    glm::vec3 impulse = s * axis;
-    bodyA->angularVelocity += invIA * impulse;
-    bodyB->angularVelocity -= invIB * impulse;
-  }
+SliderConstraint::SliderConstraint(RigidBody *a, RigidBody *b,
+                                   const glm::vec3 &worldPivot,
+                                   const glm::vec3 &worldAxis)
+    : bodyA(a), bodyB(b)
+{
+  glm::mat3 RA  = glm::toMat3(a->orientation);
+  glm::mat3 RB  = glm::toMat3(b->orientation);
+  glm::mat3 RAt = glm::transpose(RA);
+  glm::mat3 RBt = glm::transpose(RB);
+
+  localAnchorA = RAt * (worldPivot - a->position);
+  localAnchorB = RBt * (worldPivot - b->position);
+  localAxisA   = RAt * glm::normalize(worldAxis);
+
+  relativeOrientation = glm::inverse(a->orientation) * b->orientation;
+}
+
+bool SliderConstraint::connects(const RigidBody *a, const RigidBody *b) const
+{
+  return (bodyA == a && bodyB == b) || (bodyA == b && bodyB == a);
+}
+
+bool SliderConstraint::involves(const RigidBody *body) const
+{
+  return bodyA == body || bodyB == body;
+}
+
+glm::vec3 SliderConstraint::axisWorld() const
+{
+  return glm::normalize(glm::toMat3(bodyA->orientation) * localAxisA);
+}
+
+float SliderConstraint::getPosition() const
+{
+  glm::mat3 RA = glm::toMat3(bodyA->orientation);
+  glm::mat3 RB = glm::toMat3(bodyB->orientation);
+
+  glm::vec3 rA = RA * localAnchorA;
+  glm::vec3 rB = RB * localAnchorB;
+  glm::vec3 axis = glm::normalize(RA * localAxisA);
+
+  glm::vec3 anchorA = bodyA->position + rA;
+  glm::vec3 anchorB = bodyB->position + rB;
+  return glm::dot(anchorB - anchorA, axis);
+}
+
+void SliderConstraint::setLimits(float lowerM, float upperM)
+{
+  limitsEnabled = true;
+  lowerLimit = lowerM;
+  upperLimit = upperM;
+}
+
+void SliderConstraint::clearLimits()
+{
+  limitsEnabled = false;
+}
+
+void SliderConstraint::enableMotor(bool enabled)
+{
+  motorEnabled = enabled;
+}
+
+void SliderConstraint::setMotorTargetSpeed(float speedMPerSec)
+{
+  motorTargetSpeed = speedMPerSec;
+}
+
+void SliderConstraint::setMotorMaxForce(float forceN)
+{
+  motorMaxForce = forceN;
+}
+
+void SliderConstraint::solve(float dt)
+{
+  if (!bodyA || !bodyB) return;
+
+  glm::mat3 RA    = glm::toMat3(bodyA->orientation);
+  glm::mat3 RB    = glm::toMat3(bodyB->orientation);
+  glm::mat3 invIA = worldInvI(*bodyA);
+  glm::mat3 invIB = worldInvI(*bodyB);
+
+  glm::vec3 rA   = RA * localAnchorA;
+  glm::vec3 rB   = RB * localAnchorB;
+  glm::vec3 axis = glm::normalize(RA * localAxisA);
+
+  solvePerpendicularConstraint(*bodyA, *bodyB, rA, rB, axis, invIA, invIB, beta, dt);
+  solveOrientationConstraint(*bodyA, *bodyB, relativeOrientation, invIA, invIB, beta, dt);
+
+  if (limitsEnabled)
+    solveLinearLimit(*bodyA, *bodyB, rA, rB, axis, invIA, invIB, getPosition(), lowerLimit, upperLimit, limitBeta, dt);
+
+  if (motorEnabled)
+    solveLinearMotor(*bodyA, *bodyB, rA, rB, axis, invIA, invIB, motorTargetSpeed, motorMaxForce, dt);
 }
