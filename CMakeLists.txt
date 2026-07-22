@@ -92,4 +92,12 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/telescoping_boom/telescoping_boom.cpp
   )
   target_link_libraries(telescoping-boom PRIVATE rigidbody vgl)
+
+  add_executable(cubesat-pyramid
+      examples/cubesat_pyramid/cubesat_pyramid.cpp
+      examples/cubesat_pyramid/ADCS.cpp
+      examples/cubesat_pyramid/Controllers.cpp
+  )
+  target_include_directories(cubesat-pyramid PRIVATE examples/cubesat_pyramid)
+  target_link_libraries(cubesat-pyramid PRIVATE rigidbody vgl)
 endif()

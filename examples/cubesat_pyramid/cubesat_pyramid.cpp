@@ -4,13 +4,23 @@
 #include "ADCS.h"
 #include <random>
 #include <memory>
+#include <cmath>
 #include <glm/gtc/constants.hpp>
 
 // ---------------------------------------------------------------------------
-// Spacecraft definition: a 1U cubesat body with 3-axis reaction wheels.
-// This is scenario code, not engine code — the engine only knows about
-// RigidBody + ForceGenerator; "Cubesat" is just how this scenario groups the
-// actuators it built for its own flight software to reference.
+// Same as examples/cubesat, except for two things:
+//   1. A 4-wheel pyramid reaction wheel assembly instead of 3 orthogonal
+//      wheels (each tilted 45 degrees from body +Z, spaced 90 degrees apart
+//      in azimuth, mounted in a cluster near the +Z face — see
+//      buildCubesatPyramid()).
+//   2. The satellite is drawn as a 12-line wireframe box instead of a solid
+//      box, and the reaction wheels are drawn as flat cylinders at their
+//      actual mount position/orientation, with a speed arrow from each
+//      wheel's center — see drawSatelliteWireframe() / drawReactionWheels().
+//
+// A pyramid config is the standard reason for a 4th wheel: any 3 of the 4
+// can still deliver full 3-axis torque, so the cluster tolerates a single
+// wheel failure — a 3-orthogonal-wheel cluster has no such redundancy.
 // ---------------------------------------------------------------------------
 struct Cubesat
 {
@@ -18,7 +28,7 @@ struct Cubesat
   std::vector<ReactionWheel *> wheels;
 };
 
-static Cubesat buildCubesat(PhysicsWorld &world)
+static Cubesat buildCubesatPyramid(PhysicsWorld &world)
 {
   Cubesat sat;
   sat.body = world.createBody(
@@ -28,13 +38,30 @@ static Cubesat buildCubesat(PhysicsWorld &world)
 
   sat.body->position.z = sat.body->size.y * 3; // float above the ground
 
-  glm::vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-  for (int i = 0; i < 3; ++i)
+  // Pyramid layout: 4 wheels, each spin axis tilted `skew` from body +Z,
+  // spaced 90 degrees apart in azimuth. Mounted in a small cluster near the
+  // +Z face rather than at the body center, matching how a real RWA pyramid
+  // bracket is bolted to one panel.
+  const float skew = glm::radians(45.0f);
+  const float mountRadius = 0.03f;
+  const float mountHeight = 0.04f;
+
+  for (int i = 0; i < 4; ++i)
   {
+    float azimuth = glm::radians(45.0f) + i * glm::half_pi<float>(); // 45, 135, 225, 315 deg
+
+    glm::vec3 axis(std::sin(skew) * std::cos(azimuth),
+                   std::sin(skew) * std::sin(azimuth),
+                   std::cos(skew));
+
+    glm::vec3 mountPos(mountRadius * std::cos(azimuth),
+                       mountRadius * std::sin(azimuth),
+                       mountHeight);
+
     auto wheel = std::make_unique<ReactionWheel>(
-        glm::vec3(0.0f), // mount at body center
-        axes[i],
-        0.001f,                                      // max torque (Nm)
+        mountPos,
+        axis,
+        0.001f,                                      // max torque (Nm) — same as the 3-wheel cubesat
         6000.0f * (2.0f * glm::pi<float>() / 60.0f), // 6000 RPM max
         1e-6f);                                      // wheel inertia (kg*m^2)
 
@@ -143,23 +170,56 @@ void drawGrid(GUI &gui)
   }
 }
 
-void drawSatellite(GUI &gui, RigidBody *sat)
+// Body drawn as a 12-edge wireframe box instead of a solid box.
+void drawSatelliteWireframe(GUI &gui, RigidBody *sat)
 {
-  gui.drawBox(sat->position, sat->size, sat->orientation, {1.0f, 1.0f, 0});
+  glm::vec3 h = sat->size * 0.5f;
+  glm::quat q = sat->orientation;
+  glm::vec3 p = sat->position;
+  const glm::vec3 color{1.0f, 1.0f, 0.0f};
+
+  glm::vec3 c[8] = {
+      p + q * glm::vec3(-h.x, -h.y, -h.z),
+      p + q * glm::vec3(+h.x, -h.y, -h.z),
+      p + q * glm::vec3(+h.x, +h.y, -h.z),
+      p + q * glm::vec3(-h.x, +h.y, -h.z),
+      p + q * glm::vec3(-h.x, -h.y, +h.z),
+      p + q * glm::vec3(+h.x, -h.y, +h.z),
+      p + q * glm::vec3(+h.x, +h.y, +h.z),
+      p + q * glm::vec3(-h.x, +h.y, +h.z),
+  };
+
+  // Bottom face (4)
+  gui.drawLine(c[0], c[1], color);
+  gui.drawLine(c[1], c[2], color);
+  gui.drawLine(c[2], c[3], color);
+  gui.drawLine(c[3], c[0], color);
+  // Top face (4)
+  gui.drawLine(c[4], c[5], color);
+  gui.drawLine(c[5], c[6], color);
+  gui.drawLine(c[6], c[7], color);
+  gui.drawLine(c[7], c[4], color);
+  // Vertical edges (4)
+  gui.drawLine(c[0], c[4], color);
+  gui.drawLine(c[1], c[5], color);
+  gui.drawLine(c[2], c[6], color);
+  gui.drawLine(c[3], c[7], color);
 
   float arrowLength = 0.25f;
-  glm::vec3 bodyXAxis = sat->orientation * glm::vec3(1, 0, 0);
-  glm::vec3 bodyYAxis = sat->orientation * glm::vec3(0, 1, 0);
-  glm::vec3 bodyZAxis = sat->orientation * glm::vec3(0, 0, 1);
-  gui.drawArrow(sat->position, sat->position + bodyXAxis * arrowLength, glm::vec3(1, 0, 0));
-  gui.drawArrow(sat->position, sat->position + bodyYAxis * arrowLength, glm::vec3(0, 1, 0));
-  gui.drawArrow(sat->position, sat->position + bodyZAxis * arrowLength, glm::vec3(0, 0, 1));
+  gui.drawArrow(p, p + q * glm::vec3(1, 0, 0) * arrowLength, glm::vec3(1, 0, 0));
+  gui.drawArrow(p, p + q * glm::vec3(0, 1, 0) * arrowLength, glm::vec3(0, 1, 0));
+  gui.drawArrow(p, p + q * glm::vec3(0, 0, 1) * arrowLength, glm::vec3(0, 0, 1));
 }
 
+// Wheels drawn as flat cylinders at their actual mount position/orientation,
+// with a speed arrow from each wheel's center.
 void drawReactionWheels(GUI &gui, const std::vector<ReactionWheel *> &reactionWheels, RigidBody *sat)
 {
+  const float wheelRadius = 0.02f;
+  const float wheelThickness = 0.006f;
+  const float arrowLength = 0.05f;
+
   glm::vec3 totalAngular{0};
-  float axisLength = 0.20f;
   for (auto &wheel : reactionWheels)
   {
     glm::vec3 worldPos = wheel->getWorldMountPosition(*sat);
@@ -167,24 +227,28 @@ void drawReactionWheels(GUI &gui, const std::vector<ReactionWheel *> &reactionWh
 
     float satRatio = wheel->getSaturationRatio();
     float absSatRatio = std::abs(satRatio);
-    glm::vec3 axisColor;
+    glm::vec3 color;
     if (absSatRatio < 0.5f)
-      axisColor = {0, 1, 0};
+      color = {0, 1, 0};
     else if (absSatRatio < 0.9f)
-      axisColor = {1, 1, 0};
+      color = {1, 1, 0};
     else
-      axisColor = {1, 0, 0};
+      color = {1, 0, 0};
 
-    gui.drawArrow(worldPos, worldPos + worldAxis * axisLength * satRatio, axisColor);
+    // Flat "puck": thin along the spin axis, wide across it.
+    gui.drawCylinder(worldPos, wheelRadius, wheelThickness, worldAxis, glm::quat(1, 0, 0, 0), color);
+
+    // Speed arrow from the wheel's own center, along its spin axis.
+    gui.drawArrow(worldPos, worldPos + worldAxis * arrowLength * satRatio, color);
     totalAngular += worldAxis * satRatio;
   }
-  gui.drawArrow(sat->position, sat->position + totalAngular * axisLength, {1.0f, 0.65f, 0});
+  gui.drawArrow(sat->position, sat->position + totalAngular * arrowLength * 4.0f, {1.0f, 0.65f, 0});
 }
 
 void drawTelemetryPlots(GUI &gui,
                         const PlotBuffer &attErr,
                         const PlotBuffer &angRate,
-                        const PlotBuffer wheelSpeeds[3])
+                        const PlotBuffer wheelSpeeds[4])
 {
   float step = Config::PLOT_HEIGHT + Config::PLOT_GAP;
 
@@ -198,9 +262,9 @@ void drawTelemetryPlots(GUI &gui,
            Config::PLOT_ORIGIN + glm::vec3(0, 0, step * 1),
            Config::PLOT_WIDTH, Config::PLOT_HEIGHT, {1.0f, 0.6f, 0.1f});
 
-  // Wheel speed saturation ratio per axis (R/G/B = X/Y/Z wheel)
-  const glm::vec3 wheelColors[3] = {{1, 0.3f, 0.3f}, {0.3f, 1, 0.3f}, {0.3f, 0.3f, 1}};
-  for (int i = 0; i < 3; i++)
+  // Wheel speed saturation ratio, one row per wheel
+  const glm::vec3 wheelColors[4] = {{1, 0.3f, 0.3f}, {0.3f, 1, 0.3f}, {0.3f, 0.3f, 1}, {1, 1, 0.3f}};
+  for (int i = 0; i < 4; i++)
     drawPlot(gui, wheelSpeeds[i], -1.0f, 1.0f,
              Config::PLOT_ORIGIN,
              Config::PLOT_WIDTH, Config::PLOT_HEIGHT, wheelColors[i]);
@@ -211,7 +275,7 @@ void drawTelemetryPlots(GUI &gui,
 // ---------------------------------------------------------------------------
 int main()
 {
-  GUI gui(800, 600, "CubeSat Attitude Control");
+  GUI gui(800, 600, "CubeSat Attitude Control (Pyramid RWA)");
   gui.camera
       .setUp({0, 0, 1})
       .setClipPlanes(Config::CAMERA_NEAR, Config::CAMERA_FAR)
@@ -229,7 +293,7 @@ int main()
   glm::vec2 lastMousePos = gui.getMousePosition();
 
   PhysicsWorld world;
-  Cubesat sat = buildCubesat(world);
+  Cubesat sat = buildCubesatPyramid(world);
 
   // Flight software: ADCS holds references to the body (its attitude/rate
   // sensors) and the wheels (its actuators) — see ADCS.h/.cpp.
@@ -240,7 +304,7 @@ int main()
   // Telemetry buffers
   PlotBuffer plotAttErr;
   PlotBuffer plotAngRate;
-  PlotBuffer plotWheelSpeed[3];
+  PlotBuffer plotWheelSpeed[4];
 
   float lastTime = glfwGetTime();
   while (!gui.shouldClose())
@@ -287,14 +351,14 @@ int main()
 
       plotAngRate.push(glm::length(body.angularVelocity));
 
-      for (int i = 0; i < 3; i++)
+      for (int i = 0; i < 4; i++)
         plotWheelSpeed[i].push(sat.wheels[i]->getSaturationRatio());
     }
 
     // =================== DRAW ===================
     gui.beginFrame();
     drawGrid(gui);
-    drawSatellite(gui, sat.body);
+    drawSatelliteWireframe(gui, sat.body);
     drawReactionWheels(gui, sat.wheels, sat.body);
     gui.drawSphere(adcs.target, 0.05f, {0, 1.0f, 0});
     drawTelemetryPlots(gui, plotAttErr, plotAngRate, plotWheelSpeed);
