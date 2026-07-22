@@ -68,6 +68,12 @@ public:
   void addForceGenerator(std::unique_ptr<ForceGenerator> generator);
   void applyForceGenerators(float dt);
 
+  // Update mass at runtime (e.g. propellant depletion) and recompute
+  // inertia/density for the current shape and size to match. Volume is
+  // unchanged (the shape doesn't shrink as propellant burns), so density
+  // is recomputed from the new mass.
+  void setMass(float mass);
+
   void integrate(float dt);
 
   void resolveGroundCollision(float groundZ = 0.0f,

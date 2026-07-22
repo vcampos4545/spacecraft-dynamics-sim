@@ -20,6 +20,7 @@ See [`examples/`](examples/) for complete simulations that show how the pieces f
 | [`solar_panel_deploy`](examples/solar_panel_deploy/)          | Two panels hinged to a bus with `HingeConstraint`, each independently deployable (press 1 / 2) via a motor driving against an angle limit                                   |
 | [`chain`](examples/chain/)                                    | A rigid multi-link chain built from `PointConstraint`s, released from a swept-back pose to swing freely under gravity                                                       |
 | [`telescoping_boom`](examples/telescoping_boom/)              | An antenna boom on a `SliderConstraint`, driven continuously by the operator (hold Up/Down) rather than deploying once to a limit                                           |
+| [`starship`](examples/starship/)                              | Real-scale Super Heavy + Starship (`Booster`/`Starship` classes), welded stack staged via `removeConstraint`, 33+6 realistically-placed Raptors, propellant depletion via `RigidBody::setMass` |
 
 ## Dependencies
 

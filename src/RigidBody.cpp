@@ -52,6 +52,13 @@ std::unique_ptr<RigidBody> RigidBody::fromMass(
 }
 
 RigidBody::~RigidBody() {}
+
+void RigidBody::setMass(float newMass)
+{
+  mass = newMass;
+  density = mass / computeVolume();
+  computeInertiaFromMass();
+}
 // --------------------------------------------------
 // Mass & Inertia Computation
 // --------------------------------------------------

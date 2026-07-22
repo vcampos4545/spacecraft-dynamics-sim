@@ -100,4 +100,12 @@ if(RIGIDBODY_BUILD_EXAMPLES)
   )
   target_include_directories(cubesat-pyramid PRIVATE examples/cubesat_pyramid)
   target_link_libraries(cubesat-pyramid PRIVATE rigidbody vgl)
+
+  add_executable(starship
+      examples/starship/launch.cpp
+      examples/starship/Booster.cpp
+      examples/starship/Starship.cpp
+  )
+  target_include_directories(starship PRIVATE examples/starship)
+  target_link_libraries(starship PRIVATE rigidbody vgl)
 endif()
