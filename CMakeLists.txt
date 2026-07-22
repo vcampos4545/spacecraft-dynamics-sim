@@ -60,14 +60,6 @@ if(RIGIDBODY_BUILD_EXAMPLES)
     FetchContent_MakeAvailable(vgl)
   endif()
 
-  add_executable(cubesat
-      examples/cubesat/cubesat.cpp
-      examples/cubesat/ADCS.cpp
-      examples/cubesat/Controllers.cpp
-  )
-  target_include_directories(cubesat PRIVATE examples/cubesat)
-  target_link_libraries(cubesat PRIVATE rigidbody vgl)
-
   add_executable(falcon-9
       examples/falcon9/falcon-9.cpp
   )
