@@ -18,6 +18,14 @@ public:
   float currentSpeed;    // current wheel angular velocity (rad/s)
   float commandedTorque; // current commanded torque (Nm)
 
+  // Fault model: fraction of commandedTorque actually delivered, both to
+  // the wheel's own spin-up and as reaction torque on the body. 1 = healthy,
+  // 0 = fully failed (driver/bearing fault -- commands have no effect).
+  // Values between model a degraded wheel that still responds but weaker
+  // than commanded. Does not affect currentSpeed decay; a failed wheel
+  // simply stops accelerating, it doesn't spin down on its own.
+  float healthFactor = 1.0f;
+
   ReactionWheel(
       glm::vec3 mountPosBody,
       glm::vec3 axisBody,

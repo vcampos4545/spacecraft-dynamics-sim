@@ -1,6 +1,7 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
+#include "common/World.h"
 #include <cstdio>
 #include <glm/gtc/constants.hpp>
 
@@ -81,22 +82,6 @@ static void deploy(Panel &panel)
 // ---------------------------------------------------------------------------
 // Draw helpers
 // ---------------------------------------------------------------------------
-static void drawGrid(GUI &gui)
-{
-  const glm::vec3 gridColor{0.4f, 0.4f, 0.4f};
-  const glm::vec3 axisColorX{0.8f, 0.2f, 0.2f};
-  const glm::vec3 axisColorY{0.2f, 0.8f, 0.2f};
-
-  for (float i = -Config::GRID_SIZE; i <= Config::GRID_SIZE; i += Config::GRID_STEP)
-  {
-    glm::vec3 colorX = (i == 0.0f) ? axisColorX : gridColor;
-    glm::vec3 colorY = (i == 0.0f) ? axisColorY : gridColor;
-
-    gui.drawLine({i, -Config::GRID_SIZE, 0}, {i, Config::GRID_SIZE, 0}, colorX);
-    gui.drawLine({-Config::GRID_SIZE, i, 0}, {Config::GRID_SIZE, i, 0}, colorY);
-  }
-}
-
 static void drawPanel(GUI &gui, const Panel &panel, glm::vec3 color)
 {
   gui.drawBox(panel.body->position, panel.body->size, panel.body->orientation, color);
@@ -118,6 +103,8 @@ static void updateTitle(GLFWwindow *win, const Panel &panel1, const Panel &panel
 int main()
 {
   GUI gui(800, 600, "Solar Panel Deployment");
+  World scene(WorldType::DEFAULT);
+  scene.apply(gui);
   gui.camera
       .setUp({0, 0, 1})
       .setClipPlanes(Config::CAMERA_NEAR, Config::CAMERA_FAR)
@@ -170,7 +157,7 @@ int main()
 
     // =================== DRAW ===================
     gui.beginFrame();
-    drawGrid(gui);
+    scene.draw(gui, Config::GRID_SIZE, Config::GRID_STEP);
 
     gui.drawBox(bus->position, bus->size, bus->orientation, {0.6f, 0.6f, 0.65f});
     drawPanel(gui, panel1, {0.2f, 0.4f, 0.9f});

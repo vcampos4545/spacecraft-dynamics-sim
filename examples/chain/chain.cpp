@@ -3,6 +3,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
+#include "common/World.h"
 #include <vector>
 #include <cmath>
 #include <glm/gtc/constants.hpp>
@@ -36,25 +37,11 @@ namespace Config
   constexpr float SWEEP_PER_LINK = 0.08f; // initial sideways offset per link (radians-ish lean)
 }
 
-static void drawGrid(GUI &gui)
-{
-  const glm::vec3 gridColor{0.4f, 0.4f, 0.4f};
-  const glm::vec3 axisColorX{0.8f, 0.2f, 0.2f};
-  const glm::vec3 axisColorY{0.2f, 0.8f, 0.2f};
-
-  for (float i = -Config::GRID_SIZE; i <= Config::GRID_SIZE; i += Config::GRID_STEP)
-  {
-    glm::vec3 colorX = (i == 0.0f) ? axisColorX : gridColor;
-    glm::vec3 colorY = (i == 0.0f) ? axisColorY : gridColor;
-
-    gui.drawLine({i, -Config::GRID_SIZE, 0}, {i, Config::GRID_SIZE, 0}, colorX);
-    gui.drawLine({-Config::GRID_SIZE, i, 0}, {Config::GRID_SIZE, i, 0}, colorY);
-  }
-}
-
 int main()
 {
   GUI gui(800, 600, "Chain (PointConstraint)");
+  World scene(WorldType::DEFAULT);
+  scene.apply(gui);
   gui.camera
       .setUp({0, 0, 1})
       .setClipPlanes(Config::CAMERA_NEAR, Config::CAMERA_FAR)
@@ -124,7 +111,7 @@ int main()
     world.step(dt);
 
     gui.beginFrame();
-    drawGrid(gui);
+    scene.draw(gui, Config::GRID_SIZE, Config::GRID_STEP);
 
     gui.drawSphere(anchor->position, 0.04f, {1, 1, 1});
     const glm::vec3 linkColor{0.7f, 0.55f, 0.2f};

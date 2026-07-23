@@ -3,6 +3,7 @@
 #include <rigidbody/Constraint.h>
 #include "Booster.h"
 #include "Starship.h"
+#include "common/World.h"
 #include <cstdio>
 #include <glm/gtc/constants.hpp>
 
@@ -33,21 +34,6 @@ namespace Config
 // ---------------------------------------------------------------------------
 // Draw helpers
 // ---------------------------------------------------------------------------
-static void drawGrid(GUI &gui)
-{
-  const glm::vec3 gridColor{0.4f, 0.4f, 0.4f};
-  const glm::vec3 axisColorX{0.8f, 0.2f, 0.2f};
-  const glm::vec3 axisColorY{0.2f, 0.8f, 0.2f};
-
-  for (float i = -Config::GRID_SIZE; i <= Config::GRID_SIZE; i += Config::GRID_STEP)
-  {
-    glm::vec3 colorX = (i == 0.0f) ? axisColorX : gridColor;
-    glm::vec3 colorY = (i == 0.0f) ? axisColorY : gridColor;
-
-    gui.drawLine({i, -Config::GRID_SIZE, 0}, {i, Config::GRID_SIZE, 0}, colorX);
-    gui.drawLine({-Config::GRID_SIZE, i, 0}, {Config::GRID_SIZE, i, 0}, colorY);
-  }
-}
 
 // Stage body drawn as two cylinder segments split by remaining-propellant
 // fraction: bottom `fuelFraction` of the height in `fullColor`, the rest in
@@ -101,11 +87,13 @@ static void updateTitle(GLFWwindow *win, float altitudeM, float boosterFuelPct,
 int main()
 {
   GUI gui(1000, 700, "Starship");
-  gui.setLighting(false);
+  World scene(WorldType::EARTH);
+  scene.apply(gui);
   gui.camera
       .setUp({0, 0, 1})
       .setClipPlanes(Config::CAMERA_NEAR, Config::CAMERA_FAR)
       .setFOV(Config::CAMERA_FOV);
+  gui.setLogDepth(Config::CAMERA_FAR); // matches the far clip plane -- standard depth precision falls apart at this range
 
   OrbitalCamera orbit(300.0f, 45.0f, 10.0f, {0, 0, 60.0f});
   orbit.setMinDistance(15.0f)
@@ -151,6 +139,7 @@ int main()
     glm::vec2 mouseDelta = mousePos - lastMousePos;
     lastMousePos = mousePos;
     orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
+    orbit.setTarget(ship.body->position); // follow the last stage (ship continues after staging; booster falls away)
     orbit.applyToCamera(gui.camera);
 
     // Reads each stage's own propellant state, commands its engines, and
@@ -170,7 +159,7 @@ int main()
 
     // =================== DRAW ===================
     gui.beginFrame();
-    drawGrid(gui);
+    scene.draw(gui, Config::GRID_SIZE, Config::GRID_STEP);
 
     drawFuelCylinder(gui, booster.body, booster.propellantFraction(),
                      {0.2f, 0.8f, 0.3f}, {0.5f, 0.5f, 0.5f});

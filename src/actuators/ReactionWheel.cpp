@@ -32,9 +32,14 @@ void ReactionWheel::commandTorque(float torqueNm)
 
 void ReactionWheel::apply(RigidBody &body, float dt)
 {
+  // The wheel only ever actually delivers healthFactor's fraction of what
+  // was commanded -- both to its own spin-up and to the reaction torque on
+  // the body, since a degraded motor/driver is weaker everywhere it acts.
+  float effectiveTorque = commandedTorque * glm::clamp(healthFactor, 0.0f, 1.0f);
+
   // Check for saturation - can't apply torque if wheel is at max speed
   // in the direction we're trying to accelerate
-  float wheelAccel = commandedTorque / wheelInertia;
+  float wheelAccel = effectiveTorque / wheelInertia;
   float newSpeed = currentSpeed + wheelAccel * dt;
 
   // Clamp wheel speed (saturation)
@@ -45,15 +50,15 @@ void ReactionWheel::apply(RigidBody &body, float dt)
     {
       newSpeed = maxSpeed;
       // Only allow negative torque (slowing the wheel)
-      if (commandedTorque > 0)
-        commandedTorque = 0;
+      if (effectiveTorque > 0)
+        effectiveTorque = 0;
     }
     else if (newSpeed < -maxSpeed)
     {
       newSpeed = -maxSpeed;
       // Only allow positive torque (slowing the wheel)
-      if (commandedTorque < 0)
-        commandedTorque = 0;
+      if (effectiveTorque < 0)
+        effectiveTorque = 0;
     }
   }
 
@@ -62,7 +67,7 @@ void ReactionWheel::apply(RigidBody &body, float dt)
 
   // Apply reaction torque to spacecraft (Newton's 3rd law)
   // Torque on spacecraft is opposite to torque on wheel
-  glm::vec3 reactionTorqueBody = -commandedTorque * spinAxisBody;
+  glm::vec3 reactionTorqueBody = -effectiveTorque * spinAxisBody;
 
   // Transform to world frame and apply
   glm::vec3 reactionTorqueWorld = body.orientation * reactionTorqueBody;

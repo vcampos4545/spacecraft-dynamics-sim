@@ -3,6 +3,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
+#include "common/World.h"
 #include <cmath>
 #include <vector>
 
@@ -31,29 +32,14 @@ static const float BASE_RADIUS = 0.08f;                      // m radius of smal
 static const float DISTANCE = 0.5f * BAR_LENGTH - THICKNESS; // 0.41 m
 
 // -----------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------
-void drawGrid(GUI &gui, float size, float step)
-{
-  const glm::vec3 gridColor{0.35f, 0.35f, 0.35f};
-  const glm::vec3 axisX{0.7f, 0.2f, 0.2f};
-  const glm::vec3 axisY{0.2f, 0.7f, 0.2f};
-
-  for (float i = -size; i <= size; i += step)
-  {
-    gui.drawLine({i, -size, 0}, {i, size, 0}, i == 0.0f ? axisX : gridColor);
-    gui.drawLine({-size, i, 0}, {size, i, 0}, i == 0.0f ? axisY : gridColor);
-  }
-}
-
-// -----------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------
 int main()
 {
   // ---- Window & camera ------------------------------------------------
   GUI gui(800, 600, "Calder Mobile");
-  gui.setLighting(false);
+  World scene(WorldType::DEFAULT);
+  scene.apply(gui);
 
   gui.camera
       .setUp({0, 0, 1})
@@ -179,7 +165,7 @@ int main()
     // -- Draw ------------------------------------------------------------
     gui.beginFrame();
 
-    drawGrid(gui, 3.0f, 0.5f);
+    scene.draw(gui, 3.0f, 0.5f);
 
     // Strings
     const glm::vec3 stringColor{0.75f, 0.75f, 0.75f};

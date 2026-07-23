@@ -3,6 +3,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/actuators/Thruster.h>
+#include "common/World.h"
 
 /* FALCON 9 NOTES
 
@@ -74,34 +75,20 @@ public:
 };
 
 // -----------------------------------------------------------------------
-// Drawing helpers
-// -----------------------------------------------------------------------
-void drawGrid(GUI &gui, float size, float step)
-{
-  const glm::vec3 gridColor{0.4f, 0.4f, 0.4f};
-  const glm::vec3 axisColorX{0.8f, 0.2f, 0.2f};
-  const glm::vec3 axisColorY{0.2f, 0.8f, 0.2f};
-
-  for (float i = -size; i <= size; i += step)
-  {
-    gui.drawLine({i, -size, 0}, {i, size, 0}, i == 0.0f ? axisColorX : gridColor);
-    gui.drawLine({-size, i, 0}, {size, i, 0}, i == 0.0f ? axisColorY : gridColor);
-  }
-}
-
-// -----------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------
 int main()
 {
   // ---- Window & camera ------------------------------------------------
   GUI gui(800, 600, "Falcon 9 Simulation");
-  gui.setLighting(false);
+  World scene(WorldType::EARTH);
+  scene.apply(gui);
 
   gui.camera
       .setUp({0, 0, 1})
       .setClipPlanes(1.0f, 20000e3f)
       .setFOV(45.0f);
+  gui.setLogDepth(20000e3f); // matches the far clip plane -- standard depth precision falls apart at this range
 
   OrbitalCamera orbit(1000.0f, 45.0f, 15.0f, {0, 0, 0});
   orbit.setMinDistance(10.0f)
@@ -275,13 +262,14 @@ int main()
 
     // -- Simulate -------------------------------------------------------
     orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
+    orbit.setTarget(rocket->position); // follow the rocket (this sim's only stage)
     orbit.applyToCamera(gui.camera);
     world.step(dt);
 
     // -- Draw -----------------------------------------------------------
     gui.beginFrame();
 
-    drawGrid(gui, 100.0f, 10.0f);
+    scene.draw(gui, 100.0f, 10.0f);
 
     // Waypoint
     glm::vec3 wpColor = guidance.enabled ? glm::vec3(0, 1, 0) : glm::vec3(0.5f);

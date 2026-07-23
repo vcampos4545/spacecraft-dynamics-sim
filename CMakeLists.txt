@@ -20,6 +20,7 @@ add_library(rigidbody STATIC
     src/Constraint.cpp
     src/actuators/ReactionWheel.cpp
     src/actuators/Thruster.cpp
+    src/sensors/IMU.cpp
 )
 
 target_include_directories(rigidbody PUBLIC
@@ -60,29 +61,38 @@ if(RIGIDBODY_BUILD_EXAMPLES)
     FetchContent_MakeAvailable(vgl)
   endif()
 
+  # examples/common/ holds shared scene-dressing code (World.h) used by
+  # every scenario below.
+  set(EXAMPLES_COMMON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+
   add_executable(falcon-9
       examples/falcon9/falcon-9.cpp
   )
+  target_include_directories(falcon-9 PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(falcon-9 PRIVATE rigidbody vgl)
 
   add_executable(bars
       examples/bars/bars.cpp
   )
+  target_include_directories(bars PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(bars PRIVATE rigidbody vgl)
 
   add_executable(solar-panel-deploy
       examples/solar_panel_deploy/solar_panel_deploy.cpp
   )
+  target_include_directories(solar-panel-deploy PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(solar-panel-deploy PRIVATE rigidbody vgl)
 
   add_executable(chain
       examples/chain/chain.cpp
   )
+  target_include_directories(chain PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(chain PRIVATE rigidbody vgl)
 
   add_executable(telescoping-boom
       examples/telescoping_boom/telescoping_boom.cpp
   )
+  target_include_directories(telescoping-boom PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(telescoping-boom PRIVATE rigidbody vgl)
 
   add_executable(cubesat-pyramid
@@ -90,7 +100,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/cubesat_pyramid/ADCS.cpp
       examples/cubesat_pyramid/Controllers.cpp
   )
-  target_include_directories(cubesat-pyramid PRIVATE examples/cubesat_pyramid)
+  target_include_directories(cubesat-pyramid PRIVATE examples/cubesat_pyramid ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(cubesat-pyramid PRIVATE rigidbody vgl)
 
   add_executable(starship
@@ -98,6 +108,6 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/starship/Booster.cpp
       examples/starship/Starship.cpp
   )
-  target_include_directories(starship PRIVATE examples/starship)
+  target_include_directories(starship PRIVATE examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(starship PRIVATE rigidbody vgl)
 endif()
