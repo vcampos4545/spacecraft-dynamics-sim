@@ -2,6 +2,8 @@
 
 A lightweight rigid-body physics library, originally built for spacecraft simulation but not specific to it — anything that's a rigid body with actuators attached fits.
 
+<img width="800" height="693" alt="Image" src="https://github.com/user-attachments/assets/b2003fc4-73b6-4eda-9392-98f873fcb0b0" />
+
 It gives you:
 
 - **`RigidBody`** — box/sphere/cylinder/cone shapes, mass & inertia computed from density or mass, GJK+EPA convex collision, ground contact
