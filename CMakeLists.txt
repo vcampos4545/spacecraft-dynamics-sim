@@ -65,12 +65,6 @@ if(RIGIDBODY_BUILD_EXAMPLES)
   # every scenario below.
   set(EXAMPLES_COMMON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/examples)
 
-  add_executable(falcon-9
-      examples/falcon9/falcon-9.cpp
-  )
-  target_include_directories(falcon-9 PRIVATE ${EXAMPLES_COMMON_INCLUDE_DIR})
-  target_link_libraries(falcon-9 PRIVATE rigidbody vgl)
-
   add_executable(bars
       examples/bars/bars.cpp
   )
@@ -110,4 +104,11 @@ if(RIGIDBODY_BUILD_EXAMPLES)
   )
   target_include_directories(starship PRIVATE examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(starship PRIVATE rigidbody vgl)
+
+  # examples/starship/models/ holds the ship's .obj/.mtl; copied next to the
+  # built executable so the runtime-relative "models/..." load path resolves.
+  add_custom_command(TARGET starship POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/starship/models $<TARGET_FILE_DIR:starship>/models
+  )
 endif()

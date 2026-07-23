@@ -5,16 +5,18 @@
 #include "Starship.h"
 #include "common/World.h"
 #include <cstdio>
+#include <algorithm>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 // ---------------------------------------------------------------------------
-// Two real-scale cylinders — Super Heavy booster and Starship upper stage,
-// stacked and welded together (FixedConstraint) for liftoff, staged by
-// removing the weld. Each stage is its own class (Booster / Starship)
-// tracking its own propellant; firing its engines depletes that propellant
-// based on thrust and Isp, and the body's mass/inertia are kept in sync
-// every frame (RigidBody::setMass) — so the stack gets lighter, and thrust
-// stops once a stage's tank is empty.
+// Super Heavy booster (real-scale cylinder) and Starship upper stage (real
+// -scale 3D model), stacked and welded together (FixedConstraint) for
+// liftoff, staged by removing the weld. Each stage is its own class
+// (Booster / Starship) tracking its own propellant; firing its engines
+// depletes that propellant based on thrust and Isp, and the body's
+// mass/inertia are kept in sync every frame (RigidBody::setMass) — so the
+// stack gets lighter, and thrust stops once a stage's tank is empty.
 //
 // Controls:
 //   [Space] booster engines (33, full throttle while held)
@@ -62,6 +64,65 @@ static void drawFuelCylinder(GUI &gui, RigidBody *stage, float fuelFraction,
                      R, emptyHeight, zAxis, stage->orientation, emptyColor);
 }
 
+// Fits a loaded OBJ model's bounding box onto a cylinder of the given
+// height and diameter, without needing to know the model's authored units
+// or pivot in advance:
+//  - the mesh's longest bounding-box axis is treated as its nose/base axis
+//    and mapped onto height (matches Starship.cpp's local +Z = nose; for
+//    models/starship.obj the nose sits at the min end of that axis, engines
+//    /legs at the max end);
+//  - of the remaining two axes, the SHORTER one is treated as the true
+//    body diameter (the taller one is inflated by non-radially-symmetric
+//    geometry, e.g. fold-out landing legs) and both are scaled by the same
+//    factor so the cross-section stays circular instead of being squashed
+//    into an ellipse;
+//  - the bounding-box centroid is recentered onto the body's origin, since
+//    RigidBody::position is the cylinder's center but this model's own
+//    origin sits at its base.
+struct ModelFit
+{
+  glm::vec3 scale{0.0f};
+  glm::quat align{1.0f, 0.0f, 0.0f, 0.0f}; // mesh-local axes -> body-local axes
+  glm::vec3 pivotOffsetLocal{0.0f};        // mesh-local bounding-box centroid
+};
+
+static ModelFit fitModelToCylinder(const OBJMesh &mesh, float heightM, float diameterM)
+{
+  glm::vec3 lo = mesh.getBoundsMin();
+  glm::vec3 hi = mesh.getBoundsMax();
+  glm::vec3 extent = hi - lo;
+
+  int up = 0;
+  if (extent.y > extent[up]) up = 1;
+  if (extent.z > extent[up]) up = 2;
+  int a = (up + 1) % 3;
+  int b = (up + 2) % 3;
+
+  ModelFit fit;
+  fit.scale[up] = heightM / extent[up];
+  float crossScale = diameterM / std::min(extent[a], extent[b]);
+  fit.scale[a] = crossScale;
+  fit.scale[b] = crossScale;
+
+  // The longest axis is reliably the nose/base axis, but which *end* is
+  // the nose isn't derivable from the bounding box alone -- confirmed by
+  // running it that models/starship.obj has its nose at the min end (flip
+  // this sign if a differently-authored model points the other way).
+  glm::vec3 meshUp(0.0f);
+  meshUp[up] = -1.0f;
+  fit.align = glm::rotation(meshUp, glm::vec3(0, 0, 1));
+
+  fit.pivotOffsetLocal = 0.5f * (lo + hi);
+  return fit;
+}
+
+static void drawShipModel(GUI &gui, OBJMesh &mesh, const ModelFit &fit, RigidBody *stage)
+{
+  glm::quat rotation = stage->orientation * fit.align;
+  glm::vec3 centroidOffset = rotation * (fit.scale * fit.pivotOffsetLocal);
+  gui.drawOBJMesh(mesh, stage->position - centroidOffset, fit.scale, rotation);
+}
+
 static void drawEngines(GUI &gui, const std::vector<Thruster *> &engines, RigidBody *stage,
                         bool firing, float radius)
 {
@@ -102,6 +163,17 @@ int main()
       .setPanSensitivity(0.2f);
 
   glm::vec2 lastMousePos = gui.getMousePosition();
+
+  // Ship is rendered from a real model; loaded after the GUI/GL context
+  // exists (mesh upload needs a bound context). The booster doesn't have
+  // one yet, so it still draws as a fuel-colored cylinder.
+  OBJMesh shipModel;
+  if (!shipModel.load("models/starship.obj"))
+  {
+    std::fprintf(stderr, "Failed to load models/starship.obj: %s\n", shipModel.getError().c_str());
+    return 1;
+  }
+  ModelFit shipFit = fitModelToCylinder(shipModel, Starship::HEIGHT_M, Starship::DIAMETER_M);
 
   // =================== DEFINE THE VEHICLE ===================
   PhysicsWorld world;
@@ -163,8 +235,7 @@ int main()
 
     drawFuelCylinder(gui, booster.body, booster.propellantFraction(),
                      {0.2f, 0.8f, 0.3f}, {0.5f, 0.5f, 0.5f});
-    drawFuelCylinder(gui, ship.body, ship.propellantFraction(),
-                     {0.2f, 0.8f, 0.3f}, {0.75f, 0.75f, 0.75f});
+    drawShipModel(gui, shipModel, shipFit, ship.body);
 
     bool boosterFiring = boosterThrottle > 0.0f && booster.propellantMassKg > 0.0f;
     bool shipFiring = shipThrottle > 0.0f && ship.propellantMassKg > 0.0f;
