@@ -42,7 +42,7 @@ namespace Config
   // the attitude loop rights it, and the lateral guidance loop has to walk
   // it back to the target point during the rest of the descent.
   constexpr float START_ALTITUDE_M = 600.0f;
-  constexpr float START_TILT_DEG = 12.0f;
+  constexpr float START_TILT_DEG = 30.0f;
 
   // A landing configuration is nearly dry -- a full 1600t tank would make
   // the vehicle unrealistically heavy and sluggish for a short burn. 10%
@@ -199,8 +199,8 @@ int main()
 
     ImGui::SeparatorText("Trajectory");
     drawTrajectoryPlot("Altitude vs distance to target", {
-      {&shipTrajectory, "Ship", IM_COL32(80, 200, 255, 255)},
-    });
+                                                             {&shipTrajectory, "Ship", IM_COL32(80, 200, 255, 255)},
+                                                         });
     ImGui::End();
 
     gui.endFrame();
