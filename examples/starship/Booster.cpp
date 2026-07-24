@@ -1,4 +1,5 @@
 #include "Booster.h"
+#include <rigidbody/environment/Drag.h>
 #include <glm/gtc/constants.hpp>
 #include <algorithm>
 #include <cmath>
@@ -66,6 +67,11 @@ Booster::Booster(PhysicsWorld &world, const glm::vec3 &position)
     outerEngines.push_back(engine.get());
     body->addForceGenerator(std::move(engine));
   }
+
+  // Simple atmospheric drag, frontal area = the booster's own cross-section.
+  // Needs no driving from update() -- it reads body state automatically.
+  float frontalAreaM2 = glm::pi<float>() * (DIAMETER_M * 0.5f) * (DIAMETER_M * 0.5f);
+  body->addForceGenerator(std::make_unique<Drag>(frontalAreaM2));
 }
 
 void Booster::update(float throttle, float dt)
@@ -73,19 +79,27 @@ void Booster::update(float throttle, float dt)
   if (propellantMassKg <= 0.0f)
   {
     propellantMassKg = 0.0f;
-    return; // no propellant left: engines are never fired, so zero thrust
+    throttle = 0.0f; // no propellant left: force engines to zero throttle below
+  }
+  else
+  {
+    throttle = glm::clamp(throttle, 0.0f, 1.0f);
+
+    float engineCount = float(centerEngines.size() + outerEngines.size());
+    float massFlow = engineCount * MASS_FLOW_PER_ENGINE_KGPS * throttle;
+    propellantMassKg = std::max(0.0f, propellantMassKg - massFlow * dt);
   }
 
-  throttle = glm::clamp(throttle, 0.0f, 1.0f);
-
-  float engineCount = float(centerEngines.size() + outerEngines.size());
-  float massFlow = engineCount * MASS_FLOW_PER_ENGINE_KGPS * throttle;
-  propellantMassKg = std::max(0.0f, propellantMassKg - massFlow * dt);
-
+  // Set the commanded throttle; RigidBody's normal per-substep
+  // ForceGenerator dispatch (see RigidBody::integrate) applies it every
+  // substep regardless of what this function does, so throttle must always
+  // be (re)set here -- including to zero once propellant runs out -- rather
+  // than skipped via an early return. Calling Thruster::apply() directly
+  // would double-fire it on top of that automatic dispatch.
   for (auto *engine : centerEngines)
-    engine->apply(*body, throttle);
+    engine->throttle = throttle;
   for (auto *engine : outerEngines)
-    engine->apply(*body, throttle);
+    engine->throttle = throttle;
 
   refreshMass();
 }

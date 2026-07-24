@@ -331,6 +331,14 @@ void PhysicsWorld::removeConstraint(Constraint *constraint)
       constraints.end());
 }
 
+void PhysicsWorld::addGlobalForceGenerator(std::unique_ptr<ForceGenerator> generator)
+{
+  if (!generator)
+    return;
+
+  globalForceGenerators.push_back(std::move(generator));
+}
+
 // --------------------------------------------------
 // Simulation
 // --------------------------------------------------
@@ -370,9 +378,13 @@ void PhysicsWorld::integrateAll(float dt)
 {
   for (auto &body : bodies)
   {
-    // Apply world gravity as a force before integration
+    // Apply every global force generator (Gravity, Drag, etc. -- see
+    // rigidbody/environment/) before integration. There's no built-in
+    // gravity here: the world starts with none, a scenario adds whatever
+    // it wants via addGlobalForceGenerator().
     if (body->invMass > 0.0f)
-      body->applyForce(gravity * body->mass);
+      for (auto &generator : globalForceGenerators)
+        generator->apply(*body, dt);
 
     body->integrate(dt);
   }

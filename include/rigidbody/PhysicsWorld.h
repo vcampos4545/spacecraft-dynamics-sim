@@ -1,6 +1,7 @@
 #pragma once
 #include <rigidbody/RigidBody.h>
 #include <rigidbody/Constraint.h>
+#include <rigidbody/ForceGenerator.h>
 #include <vector>
 #include <memory>
 
@@ -8,7 +9,6 @@ class PhysicsWorld
 {
 public:
   float fixedTimestep = 1.0f / 120.0f; // 120 Hz physics
-  glm::vec3 gravity   = {0.0f, 0.0f, 0.0f}; // world gravity (m/s^2); set before stepping
 
   PhysicsWorld() = default;
   ~PhysicsWorld();
@@ -40,6 +40,16 @@ public:
 
   void removeConstraint(Constraint *constraint);
 
+  // Global force generators (see rigidbody/environment/) apply to every
+  // body in the world each substep, e.g. Gravity or a wind field. The world
+  // starts with none -- no gravity, no drag, nothing -- so a scenario opts
+  // into whatever physical effects it actually wants, the same way a body
+  // opts into whatever actuators/sensors it's given. Ownership transfers
+  // to the world; keep the raw pointer beforehand if you need to read the
+  // generator back later (e.g. reading Gravity::acceleration for a sensor
+  // model), same pattern as RigidBody::addForceGenerator.
+  void addGlobalForceGenerator(std::unique_ptr<ForceGenerator> generator);
+
   // Simulation
   void step(float dt);
 
@@ -50,6 +60,7 @@ public:
 private:
   std::vector<std::unique_ptr<RigidBody>> bodies;
   std::vector<std::unique_ptr<Constraint>> constraints;
+  std::vector<std::unique_ptr<ForceGenerator>> globalForceGenerators;
   float accumulator = 0.0f;
 
   void stepFixed(float dt);

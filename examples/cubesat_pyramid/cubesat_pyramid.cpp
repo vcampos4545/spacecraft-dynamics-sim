@@ -326,7 +326,10 @@ int main()
   // actuators), and the IMU (its only sensor) — see ADCS.h/.cpp. It never
   // reads body->orientation/angularVelocity directly.
   ADCS adcs(sat.body, sat.wheels, &sat.imu);
-  adcs.gravity = world.gravity; // zero in this scenario, but ADCS doesn't assume that
+  // No Gravity generator is attached to this world (free-floating orbit),
+  // so ambient gravity for the IMU model is zero -- ADCS doesn't hardcode
+  // that assumption itself, it just reads whatever it's told here.
+  adcs.gravity = glm::vec3(0.0f);
   adcs.target = randomTarget();
   adcs.sunPosition = randomSunPosition();
   float adcsTimer = 0.0f;

@@ -11,7 +11,7 @@ Thruster::Thruster(
 {
 }
 
-void Thruster::apply(RigidBody &body, float throttle)
+void Thruster::apply(RigidBody &body, float /*dt*/)
 {
   if (throttle <= 0.0f)
     return;

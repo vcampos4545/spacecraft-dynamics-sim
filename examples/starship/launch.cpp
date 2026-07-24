@@ -1,13 +1,20 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
+#include <rigidbody/environment/Gravity.h>
 #include "Booster.h"
 #include "Starship.h"
+#include "FlightSoftware.h"
 #include "common/World.h"
 #include <cstdio>
+#include <cfloat>
+#include <cmath>
 #include <algorithm>
+#include <memory>
+#include <vector>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <imgui.h>
 
 // ---------------------------------------------------------------------------
 // Super Heavy booster (real-scale cylinder) and Starship upper stage (real
@@ -18,10 +25,14 @@
 // mass/inertia are kept in sync every frame (RigidBody::setMass) — so the
 // stack gets lighter, and thrust stops once a stage's tank is empty.
 //
+// FlightSoftware.h runs the ascent + staging autonomously (guidance,
+// attitude control, and the MECO/separation/ignition/SECO sequencer) once
+// launch is committed -- see that file for how it mirrors a real ascent GNC
+// stack. This file just wires it to the vehicle, drives rendering, and
+// reads the one manual input that starts the mission.
+//
 // Controls:
-//   [Space] booster engines (33, full throttle while held)
-//   [E]     ship engines (6, full throttle while held)
-//   [1]     stage (remove the weld between booster and ship)
+//   [L] commit to launch (T-0) -- everything after that is autonomous
 // ---------------------------------------------------------------------------
 namespace Config
 {
@@ -31,6 +42,8 @@ namespace Config
 
   constexpr float GRID_SIZE = 200.0f;
   constexpr float GRID_STEP = 20.0f;
+
+  constexpr int TELEMETRY_HISTORY_SAMPLES = 300;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,15 +144,112 @@ static void drawEngines(GUI &gui, const std::vector<Thruster *> &engines, RigidB
     gui.drawSphere(engine->getWorldMountPosition(*stage), radius, color);
 }
 
-static void updateTitle(GLFWwindow *win, float altitudeM, float boosterFuelPct,
-                        float shipFuelPct, bool staged)
+// ---------------------------------------------------------------------------
+// Telemetry -- fixed-length rolling history per channel, drawn as an
+// ImGui::PlotLines graph in a telemetry window instead of window-title text.
+// ---------------------------------------------------------------------------
+struct TelemetryChannel
 {
-  char buf[256];
-  std::snprintf(buf, sizeof(buf),
-                "Starship  |  [Space] Booster  [E] Ship  [1] Stage  |  "
-                "Alt: %.0f m  |  Booster fuel: %.0f%%  |  Ship fuel: %.0f%%  |  %s",
-                altitudeM, boosterFuelPct, shipFuelPct, staged ? "STAGED" : "STACKED");
-  glfwSetWindowTitle(win, buf);
+  std::vector<float> samples;
+  size_t capacity;
+
+  explicit TelemetryChannel(size_t cap) : capacity(cap) { samples.reserve(cap); }
+
+  void push(float value)
+  {
+    if (samples.size() >= capacity)
+      samples.erase(samples.begin());
+    samples.push_back(value);
+  }
+
+  float last() const { return samples.empty() ? 0.0f : samples.back(); }
+};
+
+static void plotChannel(const char *label, const TelemetryChannel &ch, const char *unit)
+{
+  char overlay[64];
+  std::snprintf(overlay, sizeof(overlay), "%.1f %s", ch.last(), unit);
+  ImGui::PlotLines(label, ch.samples.data(), (int)ch.samples.size(), 0,
+                   overlay, FLT_MAX, FLT_MAX, ImVec2(0, 60));
+}
+
+// Ascent trajectory: downrange distance (x) vs altitude (y), unlike the
+// TelemetryChannel plots above which are scalar-vs-time. ImGui's core
+// PlotLines only plots a single series against an implicit time/index axis,
+// so an actual XY trajectory has to be drawn by hand onto the window's draw
+// list. Unbounded (not a rolling window like TelemetryChannel) since the
+// point is to see the whole flown path so far, not just the last few
+// seconds -- a ~10 minute mission at 60fps is at most a few tens of
+// thousands of points, cheap to store and draw.
+struct TrajectoryPath
+{
+  std::vector<ImVec2> points; // x = downrange (m), y = altitude (m)
+
+  void push(float downrangeM, float altitudeM)
+  {
+    points.push_back(ImVec2(downrangeM, altitudeM));
+  }
+};
+
+static void drawTrajectoryPlot(const char *label,
+                               const TrajectoryPath &boosterPath, ImU32 boosterColor,
+                               const TrajectoryPath &shipPath, ImU32 shipColor)
+{
+  ImGui::Text("%s", label);
+  ImGui::TextColored(ImColor(boosterColor), "-- Booster");
+  ImGui::SameLine();
+  ImGui::TextColored(ImColor(shipColor), "-- Ship");
+
+  ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+  ImVec2 canvasSize(ImGui::GetContentRegionAvail().x, 180.0f);
+  ImGui::InvisibleButton(label, canvasSize);
+
+  ImVec2 rectMin = canvasPos;
+  ImVec2 rectMax = ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y);
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(rectMin, rectMax, IM_COL32(20, 20, 25, 255));
+  drawList->AddRect(rectMin, rectMax, IM_COL32(90, 90, 100, 255));
+
+  // Auto-scaled axes, fit to whichever path currently has the larger range.
+  // Always include the origin (the pad) so the plot reads sensibly before
+  // much data has accumulated.
+  float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
+  auto expand = [&](const TrajectoryPath &p)
+  {
+    for (const ImVec2 &pt : p.points)
+    {
+      maxX = std::max(maxX, pt.x);
+      maxY = std::max(maxY, pt.y);
+    }
+  };
+  expand(boosterPath);
+  expand(shipPath);
+  float rangeX = std::max(maxX - minX, 1.0f);
+  float rangeY = std::max(maxY - minY, 1.0f);
+
+  auto toScreen = [&](const ImVec2 &pt)
+  {
+    float u = (pt.x - minX) / rangeX;
+    float v = (pt.y - minY) / rangeY;
+    return ImVec2(rectMin.x + u * canvasSize.x, rectMax.y - v * canvasSize.y);
+  };
+
+  auto drawPath = [&](const TrajectoryPath &p, ImU32 color)
+  {
+    if (p.points.size() < 2)
+      return;
+    std::vector<ImVec2> screenPoints;
+    screenPoints.reserve(p.points.size());
+    for (const ImVec2 &pt : p.points)
+      screenPoints.push_back(toScreen(pt));
+    drawList->AddPolyline(screenPoints.data(), (int)screenPoints.size(), color, 0, 2.0f);
+  };
+  drawPath(boosterPath, boosterColor);
+  drawPath(shipPath, shipColor);
+
+  char axisLabel[96];
+  std::snprintf(axisLabel, sizeof(axisLabel), "downrange 0-%.0f m, altitude 0-%.0f m", maxX, maxY);
+  drawList->AddText(ImVec2(rectMin.x + 4, rectMin.y + 4), IM_COL32(210, 210, 220, 255), axisLabel);
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +287,7 @@ int main()
 
   // =================== DEFINE THE VEHICLE ===================
   PhysicsWorld world;
-  world.gravity = {0.0f, 0.0f, -9.81f};
+  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
 
   // Booster stands on the pad, base at z = 0.
   Booster booster(world, glm::vec3(0, 0, Booster::HEIGHT_M * 0.5f));
@@ -187,7 +297,19 @@ int main()
 
   glm::vec3 stackJunction(0, 0, Booster::HEIGHT_M);
   FixedConstraint *stackWeld = world.addFixedConstraint(booster.body, ship.body, stackJunction);
-  bool staged = false;
+
+  FlightSoftware fsw(world, booster, ship, stackWeld);
+
+  // Sensor-side (state) and actuator-side (commanded) telemetry channels.
+  TelemetryChannel altitudeHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel speedHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel boosterFuelHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel shipFuelHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel boosterThrottleHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel shipThrottleHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TelemetryChannel targetPitchHistory(Config::TELEMETRY_HISTORY_SAMPLES);
+  TrajectoryPath boosterTrajectory;
+  TrajectoryPath shipTrajectory;
 
   float lastTime = glfwGetTime();
   while (!gui.shouldClose())
@@ -197,15 +319,11 @@ int main()
     lastTime = time;
 
     // =================== INPUT / FLIGHT SOFTWARE ===================
-    float boosterThrottle = gui.isKeyPressed(GLFW_KEY_SPACE) ? 1.0f : 0.0f;
-    float shipThrottle = gui.isKeyPressed(GLFW_KEY_E) ? 1.0f : 0.0f;
-
-    if (stackWeld && gui.isKeyJustPressed(GLFW_KEY_1))
-    {
-      world.removeConstraint(stackWeld);
-      stackWeld = nullptr;
-      staged = true;
-    }
+    // The only manual input is the launch commit; everything from LIFTOFF
+    // through SECO -- pitch program, gimbal control, MECO, staging, ship
+    // ignition -- runs autonomously inside FlightSoftware::update().
+    bool launchCommit = gui.isKeyPressed(GLFW_KEY_L);
+    fsw.update(dt, launchCommit);
 
     glm::vec2 mousePos = gui.getMousePosition();
     glm::vec2 mouseDelta = mousePos - lastMousePos;
@@ -216,18 +334,30 @@ int main()
 
     // Reads each stage's own propellant state, commands its engines, and
     // depletes propellant by the resulting mass flow.
-    booster.update(boosterThrottle, dt);
-    ship.update(shipThrottle, dt);
+    booster.update(fsw.boosterThrottle(), dt);
+    ship.update(fsw.shipThrottle(), dt);
 
     // =================== PHYSICS ===================
     world.step(dt);
 
     // =================== TELEMETRY ===================
     float altitude = booster.body->position.z - Booster::HEIGHT_M * 0.5f;
-    updateTitle(gui.getWindow(), altitude,
-               booster.propellantFraction() * 100.0f,
-               ship.propellantFraction() * 100.0f,
-               staged);
+    altitudeHistory.push(altitude);
+    speedHistory.push(glm::length(ship.body->velocity));
+    boosterFuelHistory.push(booster.propellantFraction() * 100.0f);
+    shipFuelHistory.push(ship.propellantFraction() * 100.0f);
+    boosterThrottleHistory.push(fsw.boosterThrottle() * 100.0f);
+    shipThrottleHistory.push(fsw.shipThrottle() * 100.0f);
+    targetPitchHistory.push(fsw.targetPitchDeg());
+
+    boosterTrajectory.push(
+        std::sqrt(booster.body->position.x * booster.body->position.x +
+                 booster.body->position.y * booster.body->position.y),
+        booster.body->position.z);
+    shipTrajectory.push(
+        std::sqrt(ship.body->position.x * ship.body->position.x +
+                 ship.body->position.y * ship.body->position.y),
+        ship.body->position.z);
 
     // =================== DRAW ===================
     gui.beginFrame();
@@ -237,12 +367,39 @@ int main()
                      {0.2f, 0.8f, 0.3f}, {0.5f, 0.5f, 0.5f});
     drawShipModel(gui, shipModel, shipFit, ship.body);
 
-    bool boosterFiring = boosterThrottle > 0.0f && booster.propellantMassKg > 0.0f;
-    bool shipFiring = shipThrottle > 0.0f && ship.propellantMassKg > 0.0f;
+    bool boosterFiring = fsw.boosterThrottle() > 0.0f && booster.propellantMassKg > 0.0f;
+    bool shipFiring = fsw.shipThrottle() > 0.0f && ship.propellantMassKg > 0.0f;
     drawEngines(gui, booster.centerEngines, booster.body, boosterFiring, Booster::ENGINE_DIAMETER_M * 0.5f);
     drawEngines(gui, booster.outerEngines, booster.body, boosterFiring, Booster::ENGINE_DIAMETER_M * 0.5f);
     drawEngines(gui, ship.centerEngines, ship.body, shipFiring, Starship::ENGINE_DIAMETER_M * 0.5f);
     drawEngines(gui, ship.outerEngines, ship.body, shipFiring, Starship::ENGINE_DIAMETER_M * 0.5f);
+
+    ImGui::Begin("Starship Telemetry");
+    ImGui::Text("Mission phase: %s", fsw.phaseName());
+    ImGui::Text("Mission time (T+): %.1f s", fsw.missionTime());
+    ImGui::Text("Stage state: %s", fsw.staged() ? "STAGED" : "STACKED");
+    if (fsw.phase() == MissionPhase::PRELAUNCH)
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[L] to commit to launch");
+
+    ImGui::SeparatorText("Sensors (state estimate)");
+    plotChannel("Altitude", altitudeHistory, "m");
+    plotChannel("Speed", speedHistory, "m/s");
+
+    ImGui::SeparatorText("Guidance / Control");
+    plotChannel("Target pitch", targetPitchHistory, "deg");
+
+    ImGui::SeparatorText("Actuators (commanded throttle)");
+    plotChannel("Booster throttle", boosterThrottleHistory, "%");
+    plotChannel("Ship throttle", shipThrottleHistory, "%");
+
+    ImGui::SeparatorText("Propellant");
+    plotChannel("Booster fuel", boosterFuelHistory, "%");
+    plotChannel("Ship fuel", shipFuelHistory, "%");
+
+    ImGui::SeparatorText("Trajectory");
+    drawTrajectoryPlot("Altitude vs downrange", boosterTrajectory, IM_COL32(255, 140, 60, 255),
+                       shipTrajectory, IM_COL32(80, 200, 255, 255));
+    ImGui::End();
 
     gui.endFrame();
   }

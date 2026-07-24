@@ -20,6 +20,8 @@ add_library(rigidbody STATIC
     src/Constraint.cpp
     src/actuators/ReactionWheel.cpp
     src/actuators/Thruster.cpp
+    src/environment/Gravity.cpp
+    src/environment/Drag.cpp
     src/sensors/IMU.cpp
 )
 
@@ -101,6 +103,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/starship/launch.cpp
       examples/starship/Booster.cpp
       examples/starship/Starship.cpp
+      examples/starship/FlightSoftware.cpp
   )
   target_include_directories(starship PRIVATE examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
   target_link_libraries(starship PRIVATE rigidbody vgl)
