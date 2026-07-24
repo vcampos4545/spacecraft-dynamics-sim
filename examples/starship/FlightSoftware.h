@@ -36,10 +36,17 @@ enum class MissionPhase
 //    (e.g. Powered Explicit Guidance); a fixed schedule is the closest
 //    equivalent here since this sim has no aerodynamic forces to fly a
 //    true zero-angle-of-attack gravity turn against.
-//  - Control: a PD law turns attitude error into a *collective* gimbal
-//    command applied identically to every currently-firing gimbal-capable
-//    engine (treating the cluster as one effective TVC vector, rather than
-//    solving a per-engine allocation). Only pitch/yaw are controlled --
+//  - Control: a PD law on attitude error produces a torque command, using
+//    gains re-derived from the body's *current* transverse inertia every
+//    call (same settling-time/damping-ratio parameterization as
+//    examples/cubesat_pyramid/Controllers.cpp's PIDController::autoTune) --
+//    Booster/Starship lose most of their mass to propellant burn over one
+//    ascent, so fixed gains go badly wrong well before MECO. That torque
+//    is then converted into a *collective* gimbal command applied
+//    identically to every currently-firing gimbal-capable engine (treating
+//    the cluster as one effective TVC vector rather than solving a
+//    per-engine allocation), via the physical lever-arm relationship
+//    between gimbal angle and torque. Only pitch/yaw are controlled --
 //    roll is left free, same as this sim's other scenarios.
 //  - Sequencer: a simple state machine drives MECO / stage separation /
 //    second-stage ignition / SECO off time and propellant thresholds,
@@ -69,7 +76,7 @@ private:
   void enterPhase(MissionPhase next);
   float pitchProgramDeg(float tSincePitchStart) const;
   void controlAttitude(RigidBody &body, const std::vector<Thruster *> &gimbalEngines,
-                       const glm::quat &targetAttitude);
+                       const glm::quat &targetAttitude, float throttle);
 
   PhysicsWorld &m_world;
   Booster &m_booster;

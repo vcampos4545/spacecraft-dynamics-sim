@@ -31,11 +31,15 @@ public:
 
   Starship(PhysicsWorld &world, const glm::vec3 &position);
 
-  // Fires every engine at the given throttle [0,1] (no-op once propellant
-  // is exhausted), depletes propellant by the resulting mass flow, and
-  // updates the body's mass/inertia to match. Call once per frame before
-  // stepping the PhysicsWorld.
-  void update(float throttle, float dt);
+  // Fires each engine group at its own throttle [0,1] (no-op once
+  // propellant is exhausted), depletes propellant by the resulting mass
+  // flow, and updates the body's mass/inertia to match. Call once per
+  // frame before stepping the PhysicsWorld. Real vehicles command these
+  // groups independently too -- e.g. a landing burn only lights a handful
+  // of sea-level-optimized (centerEngines) engines, never the
+  // vacuum-optimized outerEngines. Ascent scenarios that want every engine
+  // firing together can just pass the same value for both.
+  void update(float centerThrottle, float outerThrottle, float dt);
 
   float propellantFraction() const { return propellantMassKg / propellantCapacityKg; }
 

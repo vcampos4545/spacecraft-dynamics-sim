@@ -78,19 +78,21 @@ Starship::Starship(PhysicsWorld &world, const glm::vec3 &position)
   body->addForceGenerator(std::make_unique<Drag>(frontalAreaM2));
 }
 
-void Starship::update(float throttle, float dt)
+void Starship::update(float centerThrottle, float outerThrottle, float dt)
 {
   if (propellantMassKg <= 0.0f)
   {
     propellantMassKg = 0.0f;
-    throttle = 0.0f; // no propellant left: force engines to zero throttle below
+    centerThrottle = 0.0f; // no propellant left: force engines to zero throttle below
+    outerThrottle = 0.0f;
   }
   else
   {
-    throttle = glm::clamp(throttle, 0.0f, 1.0f);
+    centerThrottle = glm::clamp(centerThrottle, 0.0f, 1.0f);
+    outerThrottle = glm::clamp(outerThrottle, 0.0f, 1.0f);
 
-    float massFlow = (float(centerEngines.size()) * MASS_FLOW_SEALEVEL_KGPS
-                     + float(outerEngines.size()) * MASS_FLOW_VACUUM_KGPS) * throttle;
+    float massFlow = float(centerEngines.size()) * MASS_FLOW_SEALEVEL_KGPS * centerThrottle
+                    + float(outerEngines.size()) * MASS_FLOW_VACUUM_KGPS * outerThrottle;
     propellantMassKg = std::max(0.0f, propellantMassKg - massFlow * dt);
   }
 
@@ -101,9 +103,9 @@ void Starship::update(float throttle, float dt)
   // than skipped via an early return. Calling Thruster::apply() directly
   // would double-fire it on top of that automatic dispatch.
   for (auto *engine : centerEngines)
-    engine->throttle = throttle;
+    engine->throttle = centerThrottle;
   for (auto *engine : outerEngines)
-    engine->throttle = throttle;
+    engine->throttle = outerThrottle;
 
   refreshMass();
 }

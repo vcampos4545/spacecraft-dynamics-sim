@@ -114,4 +114,21 @@ if(RIGIDBODY_BUILD_EXAMPLES)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/starship/models $<TARGET_FILE_DIR:starship>/models
   )
+
+  # Reuses Starship.cpp from examples/starship/ (the vehicle definition) and
+  # the same models/ directory (single source of truth for the 86MB .obj)
+  # rather than duplicating either.
+  add_executable(starship-landing
+      examples/starship_landing/landing.cpp
+      examples/starship_landing/LandingSoftware.cpp
+      examples/starship/Starship.cpp
+  )
+  target_include_directories(starship-landing PRIVATE
+      examples/starship_landing examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
+  target_link_libraries(starship-landing PRIVATE rigidbody vgl)
+
+  add_custom_command(TARGET starship-landing POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/starship/models $<TARGET_FILE_DIR:starship-landing>/models
+  )
 endif()
