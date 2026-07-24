@@ -59,6 +59,12 @@ void RigidBody::setMass(float newMass)
   density = mass / computeVolume();
   computeInertiaFromMass();
 }
+
+void RigidBody::setInertiaTensor(const glm::mat3 &inertia)
+{
+  inertiaTensor = inertia;
+  invInertiaTensor = glm::inverse(inertiaTensor);
+}
 // --------------------------------------------------
 // Mass & Inertia Computation
 // --------------------------------------------------

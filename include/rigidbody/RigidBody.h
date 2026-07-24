@@ -74,6 +74,13 @@ public:
   // is recomputed from the new mass.
   void setMass(float mass);
 
+  // Override the inertia tensor directly (body-local frame) instead of
+  // deriving it from shape/mass -- e.g. a scenario with a more accurate
+  // measured/CAD inertia than the shape primitives here can compute.
+  // Keeps invInertiaTensor in sync, same as setMass()/computeInertiaFromMass();
+  // setting this directly (bypassing this method) would leave it stale.
+  void setInertiaTensor(const glm::mat3 &inertia);
+
   void integrate(float dt);
 
   void resolveGroundCollision(float groundZ = 0.0f,
