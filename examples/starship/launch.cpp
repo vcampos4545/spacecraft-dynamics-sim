@@ -8,6 +8,7 @@
 #include "common/World.h"
 #include "common/ShipModel.h"
 #include "common/Telemetry.h"
+#include "common/ImGuiLayer.h"
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
@@ -91,6 +92,7 @@ static void drawEngines(GUI &gui, const std::vector<Thruster *> &engines, RigidB
 int main()
 {
   GUI gui(1000, 700, "Starship");
+  ImGuiLayer imguiLayer(gui);
   World scene(WorldType::EARTH);
   scene.apply(gui);
   gui.camera
@@ -194,6 +196,7 @@ int main()
 
     // =================== DRAW ===================
     gui.beginFrame();
+    imguiLayer.beginFrame();
     scene.draw(gui, Config::GRID_SIZE, Config::GRID_STEP);
 
     drawFuelCylinder(gui, booster.body, booster.propellantFraction(),
@@ -236,6 +239,7 @@ int main()
     });
     ImGui::End();
 
+    imguiLayer.endFrame();
     gui.endFrame();
   }
   return 0;

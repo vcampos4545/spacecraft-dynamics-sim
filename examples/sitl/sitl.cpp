@@ -6,6 +6,7 @@
 #include <rigidbody/sensors/IMU.h>
 #include "common/World.h"
 #include "common/Telemetry.h"
+#include "common/ImGuiLayer.h"
 #include <cstdio>
 #include <cmath>
 #include <memory>
@@ -136,6 +137,7 @@ static const char *stateName(BalanceController::State s)
 int main()
 {
   GUI gui(1000, 700, "Reaction Wheel Balancer (SITL)");
+  ImGuiLayer imguiLayer(gui);
   World scene(WorldType::DEFAULT);
   scene.apply(gui);
   gui.camera
@@ -278,6 +280,7 @@ int main()
 
     // =================== DRAW ===================
     gui.beginFrame();
+    imguiLayer.beginFrame();
     scene.draw(gui, 1.0f, 0.1f);
 
     drawFrame(gui, frame, balance.getState() == BalanceController::State::Balancing);
@@ -309,6 +312,7 @@ int main()
     plotChannel("Motor voltage command", voltageHistory, "V");
     ImGui::End();
 
+    imguiLayer.endFrame();
     gui.endFrame();
   }
   return 0;

@@ -50,18 +50,54 @@ endif()
 option(RIGIDBODY_BUILD_EXAMPLES "Build the rigidbody example scenarios (requires VGL, glfw, glew)" ${RIGIDBODY_IS_TOP_LEVEL})
 
 if(RIGIDBODY_BUILD_EXAMPLES)
-  set(VGL_LOCAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../VGL")
-  if(EXISTS "${VGL_LOCAL_PATH}/CMakeLists.txt")
-    add_subdirectory(${VGL_LOCAL_PATH} vgl_build)
-  else()
-    include(FetchContent)
-    FetchContent_Declare(
-      vgl
-      GIT_REPOSITORY https://github.com/vcampos4545/VGL.git
-      GIT_TAG main
-    )
-    FetchContent_MakeAvailable(vgl)
-  endif()
+  include(FetchContent)
+
+  # Always fetched from GitHub -- no local-checkout shortcut, so the build
+  # is reproducible for anyone cloning this repo, not just on a machine
+  # that happens to have a VGL checkout sitting in the right sibling
+  # directory.
+  FetchContent_Declare(
+    vgl
+    GIT_REPOSITORY https://github.com/vcampos4545/VGL.git
+    GIT_TAG main
+  )
+  FetchContent_MakeAvailable(vgl)
+
+  # Dear ImGui -- immediate-mode UI (telemetry panels, plots, etc.) some
+  # scenarios draw. Deliberately fetched/built here, not inside VGL: VGL is
+  # a generic rendering library and has no ImGui dependency at all. Any
+  # scenario that wants panels links this `imgui` target directly and
+  # brackets VGL's own frame calls with examples/common/ImGuiLayer.h.
+  #
+  # find_package(glfw3) here too (not just relying on VGL having already
+  # found it): an imported target from find_package is only visible in the
+  # directory scope that found it and that scope's own subdirectories --
+  # VGL's copy of `glfw` lives in FetchContent's vgl subdirectory, which is
+  # a *child* of this scope, not a parent, so it isn't visible here without
+  # finding it again at this level too.
+  find_package(glfw3 REQUIRED)
+
+  FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.91.7
+  )
+  FetchContent_MakeAvailable(imgui)
+
+  add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  )
+  target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+  )
+  target_link_libraries(imgui PUBLIC glfw)
 
   # examples/common/ holds shared scene-dressing code (World.h) used by
   # every scenario below.
@@ -106,7 +142,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/starship/FlightSoftware.cpp
   )
   target_include_directories(starship PRIVATE examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
-  target_link_libraries(starship PRIVATE rigidbody vgl)
+  target_link_libraries(starship PRIVATE rigidbody vgl imgui)
 
   # examples/starship/models/ holds the ship's .obj/.mtl; copied next to the
   # built executable so the runtime-relative "models/..." load path resolves.
@@ -125,7 +161,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
   )
   target_include_directories(starship-landing PRIVATE
       examples/starship_landing examples/starship ${EXAMPLES_COMMON_INCLUDE_DIR})
-  target_link_libraries(starship-landing PRIVATE rigidbody vgl)
+  target_link_libraries(starship-landing PRIVATE rigidbody vgl imgui)
 
   add_custom_command(TARGET starship-landing POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -153,7 +189,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
         ${SITL_FIRMWARE_DIR}/src
         ${EXAMPLES_COMMON_INCLUDE_DIR}
     )
-    target_link_libraries(sitl PRIVATE rigidbody vgl)
+    target_link_libraries(sitl PRIVATE rigidbody vgl imgui)
   else()
     message(STATUS "sitl example skipped: no firmware found at ${SITL_FIRMWARE_DIR} "
                     "(set -DSITL_FIRMWARE_DIR=/path/to/reaction_wheel_balancer to build it)")

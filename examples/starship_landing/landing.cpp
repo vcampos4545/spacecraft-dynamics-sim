@@ -6,6 +6,7 @@
 #include "common/World.h"
 #include "common/ShipModel.h"
 #include "common/Telemetry.h"
+#include "common/ImGuiLayer.h"
 #include <cstdio>
 #include <cmath>
 #include <memory>
@@ -75,6 +76,7 @@ static void drawLandingPad(GUI &gui, glm::vec2 targetXY)
 int main()
 {
   GUI gui(1000, 700, "Starship Landing");
+  ImGuiLayer imguiLayer(gui);
   World scene(WorldType::EARTH);
   scene.apply(gui);
   gui.camera
@@ -166,6 +168,7 @@ int main()
 
     // =================== DRAW ===================
     gui.beginFrame();
+    imguiLayer.beginFrame();
     scene.draw(gui, Config::GRID_SIZE, Config::GRID_STEP);
 
     drawLandingPad(gui, targetXY);
@@ -203,6 +206,7 @@ int main()
                                                          });
     ImGui::End();
 
+    imguiLayer.endFrame();
     gui.endFrame();
   }
   return 0;
