@@ -131,4 +131,31 @@ if(RIGIDBODY_BUILD_EXAMPLES)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/starship/models $<TARGET_FILE_DIR:starship-landing>/models
   )
+
+  # SITL: links the real reaction_wheel_balancer firmware's portable control
+  # code (BalanceController.cpp, IMUFilter.cpp) directly into a scenario
+  # here, unmodified, from wherever that repo actually lives on disk --
+  # same "local sibling checkout, path is overridable" shape as VGL_LOCAL_PATH
+  # above, since it's the same kind of problem (an external project this one
+  # optionally builds against). Only built if that repo is actually present;
+  # everything else in this project builds fine without it.
+  set(SITL_FIRMWARE_DIR "$ENV{HOME}/Desktop/reaction_wheel_balancer" CACHE PATH
+      "Path to a reaction_wheel_balancer checkout, for the sitl example")
+  if(EXISTS "${SITL_FIRMWARE_DIR}/src/BalanceController.cpp")
+    add_executable(sitl
+        examples/sitl/sitl.cpp
+        examples/sitl/arduino_shim/Adafruit_MPU6050.cpp
+        ${SITL_FIRMWARE_DIR}/src/BalanceController.cpp
+        ${SITL_FIRMWARE_DIR}/src/IMUFilter.cpp
+    )
+    target_include_directories(sitl PRIVATE
+        examples/sitl/arduino_shim
+        ${SITL_FIRMWARE_DIR}/src
+        ${EXAMPLES_COMMON_INCLUDE_DIR}
+    )
+    target_link_libraries(sitl PRIVATE rigidbody vgl)
+  else()
+    message(STATUS "sitl example skipped: no firmware found at ${SITL_FIRMWARE_DIR} "
+                    "(set -DSITL_FIRMWARE_DIR=/path/to/reaction_wheel_balancer to build it)")
+  endif()
 endif()
