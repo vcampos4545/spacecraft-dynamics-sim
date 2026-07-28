@@ -194,4 +194,11 @@ if(RIGIDBODY_BUILD_EXAMPLES)
     message(STATUS "sitl example skipped: no firmware found at ${SITL_FIRMWARE_DIR} "
                     "(set -DSITL_FIRMWARE_DIR=/path/to/reaction_wheel_balancer to build it)")
   endif()
+
+  add_executable(robot-arm
+      examples/robot_arm/robot_arm.cpp
+      examples/robot_arm/ArmController.cpp
+  )
+  target_include_directories(robot-arm PRIVATE examples/robot_arm ${EXAMPLES_COMMON_INCLUDE_DIR})
+  target_link_libraries(robot-arm PRIVATE rigidbody vgl imgui)
 endif()
