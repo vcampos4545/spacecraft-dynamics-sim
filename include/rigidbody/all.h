@@ -19,6 +19,9 @@
 #include <rigidbody/ForceGenerator.h>
 #include <rigidbody/actuators/ReactionWheel.h>
 #include <rigidbody/actuators/Thruster.h>
+#include <rigidbody/actuators/Magnetorquer.h>
 #include <rigidbody/environment/Gravity.h>
 #include <rigidbody/environment/Drag.h>
+#include <rigidbody/environment/MagneticField.h>
 #include <rigidbody/sensors/IMU.h>
+#include <rigidbody/sensors/Magnetometer.h>
