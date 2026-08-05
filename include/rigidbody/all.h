@@ -25,3 +25,4 @@
 #include <rigidbody/environment/MagneticField.h>
 #include <rigidbody/sensors/IMU.h>
 #include <rigidbody/sensors/Magnetometer.h>
+#include <rigidbody/sensors/StarTracker.h>
