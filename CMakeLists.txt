@@ -20,9 +20,13 @@ add_library(rigidbody STATIC
     src/Constraint.cpp
     src/actuators/ReactionWheel.cpp
     src/actuators/Thruster.cpp
+    src/actuators/Magnetorquer.cpp
     src/environment/Gravity.cpp
     src/environment/Drag.cpp
+    src/environment/MagneticField.cpp
     src/sensors/IMU.cpp
+    src/sensors/Magnetometer.cpp
+    src/sensors/StarTracker.cpp
 )
 
 target_include_directories(rigidbody PUBLIC
@@ -133,7 +137,7 @@ if(RIGIDBODY_BUILD_EXAMPLES)
       examples/cubesat_pyramid/Controllers.cpp
   )
   target_include_directories(cubesat-pyramid PRIVATE examples/cubesat_pyramid ${EXAMPLES_COMMON_INCLUDE_DIR})
-  target_link_libraries(cubesat-pyramid PRIVATE rigidbody vgl)
+  target_link_libraries(cubesat-pyramid PRIVATE rigidbody vgl imgui)
 
   add_executable(starship
       examples/starship/launch.cpp
