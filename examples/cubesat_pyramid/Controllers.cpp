@@ -103,8 +103,10 @@ glm::vec3 CascadedController::computeControlTorque(
   // Natural frequency from settling time
   float omega_n = 4.0f / (dampingRatio * settlingTime);
 
-  // OUTER LOOP: attitude error -> rate command
-  float k_q = -1.0f * omega_n;
+  // OUTER LOOP: attitude error -> rate command. Positive gain: a positive
+  // attitudeError means "rotate positively to reach target", so the
+  // commanded rate should point the same way.
+  float k_q = omega_n;
   glm::vec3 omega_cmd = k_q * attitudeError;
 
   // Rate saturation (limits slew rate for large attitude errors)
@@ -114,10 +116,22 @@ glm::vec3 CascadedController::computeControlTorque(
     omega_cmd *= (omega_max / omega_cmd_mag);
   }
 
-  // INNER LOOP: rate tracking -> torque
+  // INNER LOOP: rate tracking -> torque. Positive gain here (no leading
+  // negation): this returns the *physical* stabilizing torque directly
+  // (+Kp*e - Kd*omega in expanded form), which -- same as
+  // PIDController::computeControlTorque's final `return -torque` -- is
+  // the opposite sign of what allocateActuators()/ReactionWheel::apply()
+  // actually apply to the body (Newton's-third-law reaction convention).
+  // The previous version had both this sign and the outer loop's sign
+  // backwards at once: the attitude term came out correctly signed by
+  // coincidence, but the rate/damping term ended up as +Kd*omega instead
+  // of -Kd*omega -- active anti-damping, not stabilization. Confirmed via
+  // a 60s headless run: the old code left attitude error oscillating
+  // between 30-55 deg indefinitely with body rate pinned near omega_max,
+  // never settling; this fix converges the same scenario to <2 deg.
   float omega_rate = 5.0f * omega_n;
   glm::vec3 rate_error = omega_current - omega_cmd;
-  glm::vec3 tau = -(inertiaTensor * rate_error) * omega_rate;
+  glm::vec3 tau = (inertiaTensor * rate_error) * omega_rate;
 
   return tau;
 }
