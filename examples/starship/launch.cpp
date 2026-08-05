@@ -163,7 +163,11 @@ int main()
     glm::vec2 mousePos = gui.getMousePosition();
     glm::vec2 mouseDelta = mousePos - lastMousePos;
     lastMousePos = mousePos;
-    orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
+    // Don't drive the orbit camera from mouse input ImGui itself wants
+    // (e.g. dragging the telemetry window around) -- otherwise moving a
+    // panel also spins the camera underneath it.
+    if (!ImGui::GetIO().WantCaptureMouse)
+      orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
     orbit.setTarget(ship.body->position); // follow the last stage (ship continues after staging; booster falls away)
     orbit.applyToCamera(gui.camera);
 
@@ -210,6 +214,7 @@ int main()
     drawEngines(gui, ship.centerEngines, ship.body, shipFiring, Starship::ENGINE_DIAMETER_M * 0.5f);
     drawEngines(gui, ship.outerEngines, ship.body, shipFiring, Starship::ENGINE_DIAMETER_M * 0.5f);
 
+    ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
     ImGui::Begin("Starship Telemetry");
     ImGui::Text("Mission phase: %s", fsw.phaseName());
     ImGui::Text("Mission time (T+): %.1f s", fsw.missionTime());

@@ -159,7 +159,11 @@ int main()
     glm::vec2 mousePos = gui.getMousePosition();
     glm::vec2 mouseDelta = mousePos - lastMousePos;
     lastMousePos = mousePos;
-    orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
+    // Don't drive the orbit camera from mouse input ImGui itself wants
+    // (e.g. dragging the telemetry window around) -- otherwise moving a
+    // panel also spins the camera underneath it.
+    if (!ImGui::GetIO().WantCaptureMouse)
+      orbit.handleInput(gui, mouseDelta, gui.getScrollDelta());
     orbit.applyToCamera(gui.camera);
 
     // =================== PHYSICS ===================
@@ -189,6 +193,7 @@ int main()
     // is actually being commanded to go.
     gui.drawSphere(arm.targetPosition(), 0.008f, {0.2f, 0.8f, 1.0f});
 
+    ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
     ImGui::Begin("Robot Arm Telemetry");
     ImGui::Text("Phase: %s", arm.phaseName());
     ImGui::Text("Mission time: %.1f s", missionTime);
