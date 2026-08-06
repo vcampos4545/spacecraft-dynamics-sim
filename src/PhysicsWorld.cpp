@@ -424,6 +424,8 @@ void PhysicsWorld::resolveGroundCollisions()
 
   for (auto &body : bodies)
   {
+    if (!body->groundCollisionEnabled)
+      continue;
     body->resolveGroundCollision(groundZ, restitution, friction);
   }
 }

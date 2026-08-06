@@ -40,6 +40,18 @@ public:
   glm::vec3 size; // (w, h, d), (r, l, nil), or (r, nil, nil)
   float density;  // kg/m^3
 
+  // PhysicsWorld::resolveGroundCollisions() checks every body against a
+  // fixed world-Z=0 ground plane every step, with no way to opt out --
+  // that's the right default for a scenario with an actual ground (every
+  // example that has one relies on this being unconditional), but it's
+  // wrong for a body that was never meant to have a "down": an orbital
+  // scenario whose world frame is Earth-centered (see
+  // rigidbody/orbit/OrbitState.h) has a body whose Z genuinely crosses
+  // zero every orbit, which a flat ground plane would misread as
+  // penetrating the ground twice per orbit. Set false for any body that
+  // shouldn't ever resolve against that plane.
+  bool groundCollisionEnabled = true;
+
 public:
   RigidBody(RigidBodyShape shape, const glm::vec3 &size);
   ~RigidBody();
