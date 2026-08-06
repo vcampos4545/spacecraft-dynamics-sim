@@ -28,6 +28,8 @@ add_library(rigidbody STATIC
     src/sensors/Magnetometer.cpp
     src/sensors/StarTracker.cpp
     src/sensors/SunSensor.cpp
+    src/power/SolarPanel.cpp
+    src/power/Battery.cpp
 )
 
 target_include_directories(rigidbody PUBLIC

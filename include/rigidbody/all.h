@@ -27,3 +27,5 @@
 #include <rigidbody/sensors/Magnetometer.h>
 #include <rigidbody/sensors/StarTracker.h>
 #include <rigidbody/sensors/SunSensor.h>
+#include <rigidbody/power/SolarPanel.h>
+#include <rigidbody/power/Battery.h>
