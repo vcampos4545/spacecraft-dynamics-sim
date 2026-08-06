@@ -3,7 +3,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include "common/World.h"
 #include <cmath>
 #include <memory>
@@ -59,7 +59,7 @@ int main()
 
   // ---- Physics world --------------------------------------------------
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
 
   // Collect all string constraints for visualization
   std::vector<DistanceConstraint *> strings;

@@ -16,10 +16,10 @@ enum class LandingPhase
 // A minimal powered-descent guidance demo: drop a Starship from altitude
 // (optionally tilted) and try to bring it to a soft, upright landing using
 // only its own engines. This targets the "low-altitude landing burn" phase
-// specifically -- aero is small enough there to ignore (Starship's Drag
-// force generator still applies, but there's no lift/moment aero model,
-// and none is needed at this altitude/speed regime), which is what makes
-// this the tractable, GNC-relevant slice of a full booster landing to
+// specifically -- aero is small enough there to ignore (Starship's
+// UniformDrag force generator still applies, but there's no lift/moment
+// aero model, and none is needed at this altitude/speed regime), which is
+// what makes this the tractable, GNC-relevant slice of a full booster landing to
 // actually build.
 //
 // This is NOT the real algorithm SpaceX uses -- their powered descent

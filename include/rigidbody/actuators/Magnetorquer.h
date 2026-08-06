@@ -14,10 +14,11 @@ class RigidBody;
 // with the local field strength, which is weak in LEO (tens of uT). Good
 // for slow detumbling/momentum dumping, not for fast precise slews.
 //
-// ambientFieldWorld is NOT sampled internally -- unlike Gravity's constant
-// acceleration, the ambient field varies with orbital position/time (see
-// rigidbody/environment/MagneticField.h), so the scenario is expected to
-// write it here once per frame (from a MagneticField model) before
+// ambientFieldWorld is NOT sampled internally -- unlike UniformGravity's
+// constant acceleration, the ambient field varies with orbital
+// position/time (see rigidbody/environment/uniform/UniformMagneticField.h
+// or rigidbody/environment/central_body/CentralBodyMagneticField.h), so
+// the scenario is expected to write it here once per frame before
 // PhysicsWorld::step() calls apply(), the same way ADCS::gravity is set
 // externally rather than hardcoded.
 class Magnetorquer : public ForceGenerator

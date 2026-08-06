@@ -1,7 +1,7 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include <rigidbody/actuators/ReactionWheel.h>
 #include <rigidbody/sensors/IMU.h>
 #include "common/World.h"
@@ -155,7 +155,7 @@ int main()
 
   // =================== DEFINE THE PLANT ===================
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -SimConfig::GRAVITY_MS2)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -SimConfig::GRAVITY_MS2)));
 
   glm::vec3 pivotPos(0, 0, SimConfig::PIVOT_HEIGHT_M);
 

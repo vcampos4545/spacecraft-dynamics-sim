@@ -1,6 +1,6 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include "Starship.h"
 #include "LandingSoftware.h"
 #include "common/World.h"
@@ -103,7 +103,7 @@ int main()
 
   // =================== DEFINE THE VEHICLE ===================
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
 
   glm::vec2 targetXY(0.0f, 0.0f);
   glm::vec3 startPosition(targetXY.x, targetXY.y, Config::START_ALTITUDE_M + Starship::HEIGHT_M * 0.5f);

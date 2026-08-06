@@ -1,7 +1,7 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include "Booster.h"
 #include "Starship.h"
 #include "FlightSoftware.h"
@@ -122,7 +122,7 @@ int main()
 
   // =================== DEFINE THE VEHICLE ===================
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
 
   // Booster stands on the pad, base at z = 0.
   Booster booster(world, glm::vec3(0, 0, Booster::HEIGHT_M * 0.5f));

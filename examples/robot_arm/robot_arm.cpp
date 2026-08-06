@@ -1,7 +1,7 @@
 #include <vgl/vgl.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include "ArmController.h"
 #include "common/World.h"
 #include "common/Telemetry.h"
@@ -97,7 +97,7 @@ int main()
 
   // =================== DEFINE THE ARM ===================
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -Config::GRAVITY_MS2)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -Config::GRAVITY_MS2)));
 
   RigidBody *base = world.createBody(RigidBodyShape::BOX, Config::BASE_SIZE, 1.0f);
   base->position = glm::vec3(0, 0, Config::BASE_SIZE.z * 0.5f);

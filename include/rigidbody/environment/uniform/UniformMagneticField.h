@@ -6,24 +6,25 @@
 // simulated time -- not a ForceGenerator, since it doesn't act on a body
 // directly, it's an ambient field a scenario samples and feeds to
 // Magnetorquer::ambientFieldWorld / Magnetometer::sample(), the same role
-// Gravity::acceleration plays for IMU::sample()'s specific-force
+// UniformGravity::acceleration plays for IMU::sample()'s specific-force
 // calculation.
 //
-// This sim has no orbital-position dynamics for the cubesat body itself
-// (see ADCS.cpp's NADIR comment -- pointing modes already use a fixed
-// stand-in "down" direction for the same reason), so orbital motion here is
-// a separate, purely kinematic phase angle: theta(t) = 2*pi*t/orbitalPeriodS,
-// swept along an inclined circular orbit. That alone is enough to give a
-// magnetorquer/B-dot controller a genuinely time-varying field to detumble
-// against, matching what a real LEO ADCS sees as it moves through Earth's
-// field -- it just isn't tied to where the rendered cubesat mesh actually
-// sits in the scene.
+// For a scenario with no real orbital-position dynamics for the body
+// itself, orbital motion here is a self-contained, purely kinematic phase
+// angle: theta(t) = 2*pi*t/orbitalPeriodS, swept along an inclined circular
+// orbit. That alone is enough to give a magnetorquer/B-dot controller a
+// genuinely time-varying field to detumble against, matching what a real
+// LEO ADCS sees as it moves through Earth's field -- it just isn't tied to
+// wherever the body actually sits in the scene. See
+// rigidbody/environment/central_body/CentralBodyMagneticField.h for the
+// counterpart that samples the same dipole formula at a real position
+// (e.g. from an actual orbit propagator), for scenarios that have one.
 //
 // Field magnitude/geometry uses the standard dipole formula
 //   B(r) = (K / r^3) * (3*(m . r_hat)*r_hat - m)
 // with K = mu0*|m_earth|/(4*pi) ~= 7.94e15 T*m^3, which reproduces the
 // right order of magnitude (~25-65 uT) for real LEO field strength.
-class MagneticField
+class UniformMagneticField
 {
 public:
   float altitudeKm = 500.0f;      // orbital altitude above Earth's surface

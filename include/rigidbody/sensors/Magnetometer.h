@@ -14,10 +14,11 @@ class RigidBody;
 // Reports in the sensor's own (body-fixed) axes, matching real hardware --
 // same reasoning as IMU::sample: a magnetometer can only sense the field
 // projected onto its own axes, not some external frame. The ambient field
-// itself is NOT computed here; it's sampled from a MagneticField model (see
-// rigidbody/environment/MagneticField.h) and passed in by the scenario,
-// since the field varies with orbital position/time, not something this
-// sensor can know on its own.
+// itself is NOT computed here; it's sampled from a magnetic field model
+// (see rigidbody/environment/uniform/UniformMagneticField.h or
+// rigidbody/environment/central_body/CentralBodyMagneticField.h) and
+// passed in by the scenario, since the field varies with orbital
+// position/time, not something this sensor can know on its own.
 class Magnetometer
 {
 public:

@@ -41,13 +41,14 @@ public:
   void removeConstraint(Constraint *constraint);
 
   // Global force generators (see rigidbody/environment/) apply to every
-  // body in the world each substep, e.g. Gravity or a wind field. The world
-  // starts with none -- no gravity, no drag, nothing -- so a scenario opts
-  // into whatever physical effects it actually wants, the same way a body
-  // opts into whatever actuators/sensors it's given. Ownership transfers
-  // to the world; keep the raw pointer beforehand if you need to read the
-  // generator back later (e.g. reading Gravity::acceleration for a sensor
-  // model), same pattern as RigidBody::addForceGenerator.
+  // body in the world each substep, e.g. UniformGravity/CentralBodyGravity
+  // or a wind field. The world starts with none -- no gravity, no drag,
+  // nothing -- so a scenario opts into whatever physical effects it
+  // actually wants, the same way a body opts into whatever
+  // actuators/sensors it's given. Ownership transfers to the world; keep
+  // the raw pointer beforehand if you need to read the generator back
+  // later (e.g. reading UniformGravity::acceleration for a sensor model),
+  // same pattern as RigidBody::addForceGenerator.
   void addGlobalForceGenerator(std::unique_ptr<ForceGenerator> generator);
 
   // Simulation

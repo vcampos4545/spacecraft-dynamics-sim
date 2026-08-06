@@ -147,8 +147,8 @@ public:
   // Ambient magnetic field (world frame, Tesla) at the body's current
   // location, needed to interpret the magnetometer (see Magnetometer::
   // sample) -- set externally by the scenario each frame from a
-  // MagneticField model, same role `gravity` plays for the IMU. This
-  // does NOT drive the magnetorquers themselves (they read their own
+  // UniformMagneticField model, same role `gravity` plays for the IMU.
+  // This does NOT drive the magnetorquers themselves (they read their own
   // Magnetorquer::ambientFieldWorld, set the same way); it's only used
   // here to simulate what the magnetometer reads.
   glm::vec3 ambientFieldWorld{0.0f};

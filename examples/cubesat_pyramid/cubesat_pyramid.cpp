@@ -5,7 +5,7 @@
 #include <rigidbody/sensors/IMU.h>
 #include <rigidbody/sensors/Magnetometer.h>
 #include <rigidbody/sensors/StarTracker.h>
-#include <rigidbody/environment/MagneticField.h>
+#include <rigidbody/environment/uniform/UniformMagneticField.h>
 #include "ADCS.h"
 #include "common/World.h"
 #include "common/ImGuiLayer.h"
@@ -451,9 +451,10 @@ static void drawSunReflection(GUI &gui, RigidBody *sat, const glm::vec3 &sunPosi
 // arrows around the body, all pointing the same direction/magnitude, since
 // the field varies negligibly over a cubesat-sized volume (its gradient
 // scale is Earth-sized, not cubesat-sized) -- what varies is the field
-// *over time* as the kinematic orbit in MagneticField sweeps through it
-// (see MagneticField.h). A distinct, brighter arrow at the body itself
-// marks the same vector so it reads clearly against the grid.
+// *over time* as the kinematic orbit in UniformMagneticField sweeps
+// through it (see UniformMagneticField.h). A distinct, brighter arrow at
+// the body itself marks the same vector so it reads clearly against the
+// grid.
 static void drawMagneticField(GUI &gui, const glm::vec3 &fieldWorldT, glm::vec3 satPos)
 {
   // Scales a ~20-60 uT LEO field into a visible arrow length at cubesat
@@ -889,7 +890,7 @@ int main()
   // (its sensors) — see ADCS.h/.cpp. It never reads body->orientation/
   // angularVelocity directly.
   ADCS adcs(sat.body, sat.wheels, &sat.imu, sat.magnetorquers, &sat.magnetometer, &sat.starTracker);
-  // No Gravity generator is attached to this world (free-floating orbit),
+  // No gravity generator is attached to this world (free-floating orbit),
   // so ambient gravity for the IMU model is zero -- ADCS doesn't hardcode
   // that assumption itself, it just reads whatever it's told here.
   adcs.gravity = glm::vec3(0.0f);
@@ -898,12 +899,13 @@ int main()
   float adcsTimer = 0.0f;
   float missionTime = 0.0f;
 
-  // Ambient magnetic field model (see rigidbody/environment/MagneticField.h)
-  // -- default LEO/ISS-like altitude and inclination. Sampled every frame
-  // below and written into both the magnetorquers (which need it to turn a
+  // Ambient magnetic field model (see
+  // rigidbody/environment/uniform/UniformMagneticField.h) -- default
+  // LEO/ISS-like altitude and inclination. Sampled every frame below and
+  // written into both the magnetorquers (which need it to turn a
   // commanded dipole moment into torque) and ADCS (which needs it to
   // interpret the magnetometer), the same way `adcs.gravity` feeds the IMU.
-  MagneticField magneticField;
+  UniformMagneticField magneticField;
 
   SensorTelemetry telemetry(Config::TELEMETRY_HISTORY_SAMPLES);
 

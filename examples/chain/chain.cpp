@@ -3,7 +3,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/Constraint.h>
-#include <rigidbody/environment/Gravity.h>
+#include <rigidbody/environment/uniform/UniformGravity.h>
 #include "common/World.h"
 #include <vector>
 #include <cmath>
@@ -62,7 +62,7 @@ int main()
 
   // =================== DEFINE THE CHAIN ===================
   PhysicsWorld world;
-  world.addGlobalForceGenerator(std::make_unique<Gravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
+  world.addGlobalForceGenerator(std::make_unique<UniformGravity>(glm::vec3(0.0f, 0.0f, -9.81f)));
 
   RigidBody *anchor = world.createBody(RigidBodyShape::BOX, {0.1f, 0.1f, 0.1f}, 1.0f);
   anchor->invMass = 0.0f;

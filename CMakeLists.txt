@@ -21,9 +21,17 @@ add_library(rigidbody STATIC
     src/actuators/ReactionWheel.cpp
     src/actuators/Thruster.cpp
     src/actuators/Magnetorquer.cpp
-    src/environment/Gravity.cpp
-    src/environment/Drag.cpp
-    src/environment/MagneticField.cpp
+    src/environment/uniform/UniformGravity.cpp
+    src/environment/uniform/UniformDrag.cpp
+    src/environment/uniform/UniformMagneticField.cpp
+    src/environment/central_body/CentralBodyGravity.cpp
+    src/environment/central_body/CentralBodyDrag.cpp
+    src/environment/central_body/CentralBodyMagneticField.cpp
+    src/orbit/OrbitalElements.cpp
+    src/orbit/OrbitForceModel.cpp
+    src/orbit/OrbitPropagator.cpp
+    src/orbit/SunModel.cpp
+    src/orbit/EclipseModel.cpp
     src/sensors/IMU.cpp
     src/sensors/Magnetometer.cpp
     src/sensors/StarTracker.cpp
@@ -57,6 +65,14 @@ endif()
 option(RIGIDBODY_BUILD_EXAMPLES "Build the rigidbody example scenarios (requires VGL, glfw, glew)" ${RIGIDBODY_IS_TOP_LEVEL})
 
 if(RIGIDBODY_BUILD_EXAMPLES)
+  # Headless validation for rigidbody/orbit/ and CentralBodyGravity -- no
+  # rendering, no GL/GLFW dependency, so it's built here directly rather
+  # than waiting on the VGL/imgui fetch below.
+  add_executable(orbit-validation
+      examples/orbit_validation/orbit_validation.cpp
+  )
+  target_link_libraries(orbit-validation PRIVATE rigidbody)
+
   include(FetchContent)
 
   # Always fetched from GitHub -- no local-checkout shortcut, so the build

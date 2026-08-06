@@ -1,4 +1,4 @@
-#include <rigidbody/environment/MagneticField.h>
+#include <rigidbody/environment/uniform/UniformMagneticField.h>
 #include <glm/gtc/constants.hpp>
 #include <cmath>
 
@@ -21,7 +21,7 @@ void buildBasis(const glm::vec3 &up, glm::vec3 &x, glm::vec3 &y, glm::vec3 &z)
 }
 } // namespace
 
-glm::vec3 MagneticField::dipoleMomentDirection() const
+glm::vec3 UniformMagneticField::dipoleMomentDirection() const
 {
   glm::vec3 x, y, z;
   buildBasis(sceneUp, x, y, z);
@@ -33,7 +33,7 @@ glm::vec3 MagneticField::dipoleMomentDirection() const
   return glm::normalize(std::sin(tilt) * x + std::cos(tilt) * z);
 }
 
-glm::vec3 MagneticField::orbitPositionDirection(float simTime) const
+glm::vec3 UniformMagneticField::orbitPositionDirection(float simTime) const
 {
   glm::vec3 x, y, z;
   buildBasis(sceneUp, x, y, z);
@@ -48,7 +48,7 @@ glm::vec3 MagneticField::orbitPositionDirection(float simTime) const
                         std::sin(theta) * (std::cos(inc) * y + std::sin(inc) * z));
 }
 
-glm::vec3 MagneticField::sample(float simTime) const
+glm::vec3 UniformMagneticField::sample(float simTime) const
 {
   glm::vec3 rHat = orbitPositionDirection(simTime);
   glm::vec3 m = dipoleMomentDirection();

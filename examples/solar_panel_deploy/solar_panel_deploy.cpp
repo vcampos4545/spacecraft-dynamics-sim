@@ -122,7 +122,7 @@ int main()
   glm::vec2 lastMousePos = gui.getMousePosition();
 
   // =================== DEFINE THE SPACECRAFT ===================
-  // Free-floating: no Gravity generator is attached, so there's no gravity
+  // Free-floating: no gravity generator is attached, so there's no gravity
   // at all (the world starts with none by default).
   PhysicsWorld world;
 

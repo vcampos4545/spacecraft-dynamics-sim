@@ -378,8 +378,9 @@ void PhysicsWorld::integrateAll(float dt)
 {
   for (auto &body : bodies)
   {
-    // Apply every global force generator (Gravity, Drag, etc. -- see
-    // rigidbody/environment/) before integration. There's no built-in
+    // Apply every global force generator (UniformGravity,
+    // CentralBodyGravity, etc. -- see rigidbody/environment/) before
+    // integration. There's no built-in
     // gravity here: the world starts with none, a scenario adds whatever
     // it wants via addGlobalForceGenerator().
     if (body->invMass > 0.0f)

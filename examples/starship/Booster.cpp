@@ -1,5 +1,5 @@
 #include "Booster.h"
-#include <rigidbody/environment/Drag.h>
+#include <rigidbody/environment/uniform/UniformDrag.h>
 #include <glm/gtc/constants.hpp>
 #include <algorithm>
 #include <cmath>
@@ -71,7 +71,7 @@ Booster::Booster(PhysicsWorld &world, const glm::vec3 &position)
   // Simple atmospheric drag, frontal area = the booster's own cross-section.
   // Needs no driving from update() -- it reads body state automatically.
   float frontalAreaM2 = glm::pi<float>() * (DIAMETER_M * 0.5f) * (DIAMETER_M * 0.5f);
-  body->addForceGenerator(std::make_unique<Drag>(frontalAreaM2));
+  body->addForceGenerator(std::make_unique<UniformDrag>(frontalAreaM2));
 }
 
 void Booster::update(float throttle, float dt)
