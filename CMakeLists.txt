@@ -27,6 +27,7 @@ add_library(rigidbody STATIC
     src/sensors/IMU.cpp
     src/sensors/Magnetometer.cpp
     src/sensors/StarTracker.cpp
+    src/sensors/SunSensor.cpp
 )
 
 target_include_directories(rigidbody PUBLIC
