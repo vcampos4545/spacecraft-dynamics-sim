@@ -15,6 +15,16 @@ constexpr double EARTH_RADIUS_M = 6.371e6;
 constexpr double EARTH_ROTATION_RATE_RAD_S = 7.2921150e-5; // sidereal rotation rate
 constexpr double DEG2RAD = 3.14159265358979323846 / 180.0;
 
+// Known-body geometric constants -- generic across physics (this module's
+// force models) and visualization (a scenario sizing a rendered sphere at
+// the body's real radius). Gravitational parameters (mu) live with the
+// force models that use them (e.g. OrbitForceModel.h, ThirdBodyGravity.h)
+// instead of here, since a geometric radius and a dynamical mu are
+// different categories of "known constant" with different consumers.
+constexpr double SUN_RADIUS_M = 6.957e8;
+constexpr double MOON_RADIUS_M = 1.7374e6;
+constexpr double AU_M = 1.495978707e11; // one astronomical unit
+
 // Geodetic latitude/longitude (degrees) + altitude (m) -> ECEF (m),
 // spherical Earth.
 inline glm::dvec3 geodeticToECEF(double latDeg, double lonDeg, double altM = 0.0)
@@ -61,6 +71,31 @@ inline glm::dvec3 eciToECEF(const glm::dvec3 &eci, double thetaGstRad)
   return glm::dvec3(c * eci.x + s * eci.y,
                     -s * eci.x + c * eci.y,
                     eci.z);
+}
+
+// Geodetic latitude/longitude (degrees), spherical Earth -- the inverse of
+// geodeticToECEF's lat/lon (ignoring altitude).
+struct Geodetic
+{
+  double latDeg;
+  double lonDeg;
+};
+
+inline Geodetic ecefToGeodetic(const glm::dvec3 &ecef)
+{
+  double r = glm::length(ecef);
+  Geodetic g;
+  g.latDeg = std::asin(std::clamp(ecef.z / r, -1.0, 1.0)) / DEG2RAD;
+  g.lonDeg = std::atan2(ecef.y, ecef.x) / DEG2RAD;
+  return g;
+}
+
+// Convenience: ECI position + the current Greenwich sidereal angle (from
+// gmstRad) straight to geodetic lat/lon, for ground-track/footprint
+// visualization -- composes eciToECEF + ecefToGeodetic.
+inline Geodetic eciToGeodeticDeg(const glm::dvec3 &eci, double thetaGstRad)
+{
+  return ecefToGeodetic(eciToECEF(eci, thetaGstRad));
 }
 
 // Elevation angle (radians) of a satellite at rSatEci as seen from a

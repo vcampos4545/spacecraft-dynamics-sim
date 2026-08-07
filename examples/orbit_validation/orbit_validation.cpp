@@ -13,6 +13,10 @@
 #include <rigidbody/orbit/OrbitTime.h>
 #include <rigidbody/orbit/SunModel.h>
 #include <rigidbody/orbit/EclipseModel.h>
+#include <rigidbody/orbit/MoonModel.h>
+#include <rigidbody/orbit/ThirdBodyGravity.h>
+#include <rigidbody/orbit/AtmosphericDrag.h>
+#include <rigidbody/orbit/SolarRadiationPressure.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/environment/central_body/CentralBodyGravity.h>
 #include <cstdio>
@@ -53,6 +57,55 @@ void checkOrbitalElementsCircular()
   double radialDot = glm::dot(glm::normalize(state.position), glm::normalize(state.velocity));
   check(std::abs(radialDot) < 1e-9,
         "OrbitalElements::circular: velocity is perpendicular to position");
+}
+
+void checkOrbitalElementsRoundTrip()
+{
+  // Deliberately eccentric/inclined/non-zero RAAN+argPeriapsis, to
+  // exercise every branch of fromState() (the circular check above can't
+  // -- eccentricity and argument of periapsis are degenerate at e=0).
+  OrbitalElements original;
+  original.semiMajorAxisM = EARTH_RADIUS_M + 800e3;
+  original.eccentricity = 0.15;
+  original.inclinationRad = 63.4 * OrbitFrames::DEG2RAD;
+  original.raanRad = 40.0 * OrbitFrames::DEG2RAD;
+  original.argPeriapsisRad = 75.0 * OrbitFrames::DEG2RAD;
+  original.trueAnomalyRad = 110.0 * OrbitFrames::DEG2RAD;
+
+  OrbitState state = original.toState(MU_EARTH);
+  OrbitalElements recovered = OrbitalElements::fromState(state, MU_EARTH);
+
+  check(std::abs(recovered.semiMajorAxisM - original.semiMajorAxisM) < 1.0,
+        "OrbitalElements::fromState: semi-major axis round-trips");
+  check(std::abs(recovered.eccentricity - original.eccentricity) < 1e-9,
+        "OrbitalElements::fromState: eccentricity round-trips");
+  check(std::abs(recovered.inclinationRad - original.inclinationRad) < 1e-9,
+        "OrbitalElements::fromState: inclination round-trips");
+  check(std::abs(recovered.raanRad - original.raanRad) < 1e-9,
+        "OrbitalElements::fromState: RAAN round-trips");
+  check(std::abs(recovered.argPeriapsisRad - original.argPeriapsisRad) < 1e-9,
+        "OrbitalElements::fromState: argument of periapsis round-trips");
+  check(std::abs(recovered.trueAnomalyRad - original.trueAnomalyRad) < 1e-9,
+        "OrbitalElements::fromState: true anomaly round-trips");
+}
+
+void checkGeodeticRoundTrip()
+{
+  double latDeg = -33.4;
+  double lonDeg = 151.2; // an arbitrary real-world-scale point (Sydney-ish)
+  glm::dvec3 ecef = OrbitFrames::geodeticToECEF(latDeg, lonDeg);
+  OrbitFrames::Geodetic recovered = OrbitFrames::ecefToGeodetic(ecef);
+
+  check(std::abs(recovered.latDeg - latDeg) < 1e-9,
+        "OrbitFrames::ecefToGeodetic: latitude round-trips through geodeticToECEF");
+  check(std::abs(recovered.lonDeg - lonDeg) < 1e-9,
+        "OrbitFrames::ecefToGeodetic: longitude round-trips through geodeticToECEF");
+
+  // eciToGeodeticDeg at thetaGst=0 should match ecefToGeodetic directly
+  // (ECI and ECEF coincide when the Earth-rotation angle is zero).
+  OrbitFrames::Geodetic viaEci = OrbitFrames::eciToGeodeticDeg(ecef, 0.0);
+  check(std::abs(viaEci.latDeg - latDeg) < 1e-9 && std::abs(viaEci.lonDeg - lonDeg) < 1e-9,
+        "OrbitFrames::eciToGeodeticDeg: matches ecefToGeodetic at thetaGst=0");
 }
 
 void checkTwoBodyKeplerianPeriod()
@@ -146,6 +199,116 @@ void checkSunAndEclipse()
         "EclipseModel::inEclipse: satellite on the sunward side is not in shadow");
 }
 
+void checkMoonModel()
+{
+  double jd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+  glm::dvec3 dir = MoonModel::directionEci(jd);
+  check(std::abs(glm::length(dir) - 1.0) < 1e-9,
+        "MoonModel::directionEci returns a unit vector");
+
+  glm::dvec3 pos = MoonModel::positionEci(jd);
+  double dist = glm::length(pos);
+  // Earth-Moon distance ranges from ~356,500 km (perigee) to ~406,700 km
+  // (apogee); a low-precision model should still land well inside this
+  // range for any date.
+  check(dist > 3.5e8 && dist < 4.1e8,
+        "MoonModel::positionEci: distance is within the real perigee/apogee range");
+}
+
+void checkThirdBodyGravity()
+{
+  // LEO state (position only matters for the acceleration call; velocity
+  // is unused by ThirdBodyGravity).
+  OrbitState state;
+  state.position = glm::dvec3(EARTH_RADIUS_M + 500e3, 0.0, 0.0);
+  double epochJd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+
+  ThirdBodyGravity sunGravity(ThirdBodyType::Sun);
+  sunGravity.epochJd = epochJd;
+  glm::dvec3 sunAccel = sunGravity.acceleration(state, 0.0);
+
+  ThirdBodyGravity moonGravity(ThirdBodyType::Moon);
+  moonGravity.epochJd = epochJd;
+  glm::dvec3 moonAccel = moonGravity.acceleration(state, 0.0);
+
+  // Leading-order tidal approximation (valid since d_third-body >>
+  // r_satellite): |a| ~= 2 * mu_third * r_sat / d^3. Loose tolerance
+  // since this is a first-order approximation, not the exact formula.
+  double rSat = glm::length(state.position);
+  double dSun = glm::length(SunModel::positionEci(epochJd));
+  double dMoon = glm::length(MoonModel::positionEci(epochJd));
+  constexpr double GM_SUN = 1.32712440018e20;
+  constexpr double GM_MOON = 4.9048695e12;
+  double sunTidalApprox = 2.0 * GM_SUN * rSat / (dSun * dSun * dSun);
+  double moonTidalApprox = 2.0 * GM_MOON * rSat / (dMoon * dMoon * dMoon);
+
+  double sunRelErr = std::abs(glm::length(sunAccel) - sunTidalApprox) / sunTidalApprox;
+  double moonRelErr = std::abs(glm::length(moonAccel) - moonTidalApprox) / moonTidalApprox;
+  check(sunRelErr < 0.5,
+        "ThirdBodyGravity(Sun): magnitude at LEO matches leading-order tidal approximation");
+  check(moonRelErr < 0.5,
+        "ThirdBodyGravity(Moon): magnitude at LEO matches leading-order tidal approximation");
+
+  // Known real-world orders of magnitude (~1e-7 to ~1e-6 m/s^2 at LEO).
+  check(glm::length(sunAccel) > 1e-8 && glm::length(sunAccel) < 1e-5,
+        "ThirdBodyGravity(Sun): magnitude at LEO is the expected order of magnitude");
+  check(glm::length(moonAccel) > 1e-8 && glm::length(moonAccel) < 1e-5,
+        "ThirdBodyGravity(Moon): magnitude at LEO is the expected order of magnitude");
+}
+
+void checkAtmosphericDrag()
+{
+  AtmosphericDrag drag(0.01, 1.33); // representative 1U-ish cross-section/mass
+
+  auto accelAtAltitude = [&](double altitudeM) {
+    OrbitState state;
+    state.position = glm::dvec3(EARTH_RADIUS_M + altitudeM, 0.0, 0.0);
+    // Circular-ish velocity in +Y, so there's real relative motion vs. the
+    // co-rotating atmosphere for drag to act against.
+    state.velocity = glm::dvec3(0.0, std::sqrt(MU_EARTH / (EARTH_RADIUS_M + altitudeM)), 0.0);
+    return drag.acceleration(state, 0.0);
+  };
+
+  glm::dvec3 accel300 = accelAtAltitude(300e3);
+  glm::dvec3 accel500 = accelAtAltitude(500e3);
+  glm::dvec3 accel800 = accelAtAltitude(800e3);
+  check(glm::length(accel300) > glm::length(accel500) && glm::length(accel500) > glm::length(accel800),
+        "AtmosphericDrag: acceleration magnitude decreases monotonically with altitude");
+
+  glm::dvec3 accel1200 = accelAtAltitude(1200e3);
+  check(glm::length(accel1200) == 0.0,
+        "AtmosphericDrag: acceleration vanishes above 1000km (out of model range)");
+
+  OrbitState state300;
+  state300.position = glm::dvec3(EARTH_RADIUS_M + 300e3, 0.0, 0.0);
+  state300.velocity = glm::dvec3(0.0, std::sqrt(MU_EARTH / (EARTH_RADIUS_M + 300e3)), 0.0);
+  glm::dvec3 accel = drag.acceleration(state300, 0.0);
+  check(glm::dot(accel, state300.velocity) < 0.0,
+        "AtmosphericDrag: acceleration opposes velocity (decelerating)");
+}
+
+void checkSolarRadiationPressure()
+{
+  SolarRadiationPressure srp(0.01, 1.33);
+  double epochJd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+  srp.epochJd = epochJd;
+  glm::dvec3 sunDir = SunModel::directionEci(epochJd);
+
+  OrbitState sunwardState;
+  sunwardState.position = sunDir * (EARTH_RADIUS_M + 500e3);
+  glm::dvec3 sunwardAccel = srp.acceleration(sunwardState, 0.0);
+  check(glm::length(sunwardAccel) > 0.0,
+        "SolarRadiationPressure: nonzero acceleration when sunlit");
+  check(glm::dot(sunwardAccel, sunDir) < 0.0,
+        "SolarRadiationPressure: acceleration points away from the Sun");
+
+  OrbitState eclipsedState;
+  eclipsedState.position = -sunDir * (EARTH_RADIUS_M + 500e3);
+  glm::dvec3 eclipsedAccel = srp.acceleration(eclipsedState, 0.0);
+  check(glm::length(eclipsedAccel) == 0.0,
+        "SolarRadiationPressure: zero acceleration while in eclipse");
+}
+
 void checkCentralBodyGravityClosedOrbit()
 {
   float altitudeM = 500e3f;
@@ -181,9 +344,15 @@ void checkCentralBodyGravityClosedOrbit()
 int main()
 {
   checkOrbitalElementsCircular();
+  checkOrbitalElementsRoundTrip();
+  checkGeodeticRoundTrip();
   checkTwoBodyKeplerianPeriod();
   checkJ2NodalRegression();
   checkSunAndEclipse();
+  checkMoonModel();
+  checkThirdBodyGravity();
+  checkAtmosphericDrag();
+  checkSolarRadiationPressure();
   checkCentralBodyGravityClosedOrbit();
 
   std::printf("\n%s\n", g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
