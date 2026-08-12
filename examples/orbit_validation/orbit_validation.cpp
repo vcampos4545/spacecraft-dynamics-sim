@@ -17,6 +17,8 @@
 #include <rigidbody/orbit/ThirdBodyGravity.h>
 #include <rigidbody/orbit/AtmosphericDrag.h>
 #include <rigidbody/orbit/SolarRadiationPressure.h>
+#include <rigidbody/orbit/CelestialSystem.h>
+#include <rigidbody/orbit/CelestialPerturbation.h>
 #include <rigidbody/PhysicsWorld.h>
 #include <rigidbody/environment/central_body/CentralBodyGravity.h>
 #include <cstdio>
@@ -199,6 +201,56 @@ void checkSunAndEclipse()
         "EclipseModel::inEclipse: satellite on the sunward side is not in shadow");
 }
 
+void checkCalendarDateRoundTrip()
+{
+  // Several dates across a year (including a leap-year Feb 29 and a
+  // year boundary) to exercise calendarDate()'s month/year carry logic,
+  // not just a single easy case.
+  struct Case
+  {
+    int year, month, day, hour, minute;
+    double second;
+  };
+  const Case cases[] = {
+      {2026, 1, 1, 0, 0, 0.0},
+      {2026, 3, 20, 12, 0, 0.0},
+      {2024, 2, 29, 23, 59, 59.5}, // leap day, near midnight rollover
+      {2025, 12, 31, 23, 59, 59.999},
+      {2030, 7, 4, 14, 21, 3.0},
+  };
+
+  for (const Case &c : cases)
+  {
+    double jd = OrbitTime::julianDate(c.year, c.month, c.day, c.hour, c.minute, c.second);
+    int y, mo, d, h, mi;
+    double s;
+    OrbitTime::calendarDate(jd, y, mo, d, h, mi, s);
+
+    // 1ms tolerance, not 1e-6s: a Julian Date near 2.46e6 has ~15-16
+    // significant decimal digits of double precision to work with, so
+    // sub-millisecond round-off through julianDate's own chain of
+    // divisions/multiplications (and calendarDate's inverse) is expected,
+    // not a bug -- nowhere near the whole-second resolution anything
+    // consuming this (e.g. a pass-schedule AOS/LOS display) actually needs.
+    bool match = (y == c.year && mo == c.month && d == c.day && h == c.hour &&
+                  mi == c.minute && std::abs(s - c.second) < 1e-3);
+    // The 23:59:59.999 case may legitimately carry into the next second
+    // (60.0 - 59.999 = 0.001, within float round-off of the carry
+    // threshold in calendarDate's own guard) -- accept a carry to the
+    // next day as equally correct, not just an exact field match.
+    if (!match && c.second > 59.9)
+    {
+      double jdRecovered = OrbitTime::julianDate(y, mo, d, h, mi, s);
+      match = std::abs(jdRecovered - jd) < (0.5 / OrbitTime::SECONDS_PER_DAY);
+    }
+    char msg[256];
+    std::snprintf(msg, sizeof(msg),
+                  "OrbitTime::calendarDate: round-trips %04d-%02d-%02d %02d:%02d:%06.3f (got %04d-%02d-%02d %02d:%02d:%06.3f)",
+                  c.year, c.month, c.day, c.hour, c.minute, c.second, y, mo, d, h, mi, s);
+    check(match, msg);
+  }
+}
+
 void checkMoonModel()
 {
   double jd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
@@ -339,6 +391,149 @@ void checkCentralBodyGravityClosedOrbit()
   check(posError < 50000.0f,
         "CentralBodyGravity: RigidBody under real 1/r^2 gravity returns near start after one period");
 }
+
+// Builds a Sun (root) -> Earth -> Moon hierarchy, reusing the existing
+// analytic SunModel/MoonModel formulas as each child's parent-relative
+// ephemeris -- Earth's position relative to the Sun is exactly
+// -SunModel::positionEci(jd) (SunModel already gives the Sun's position
+// relative to Earth), and Moon's relative to Earth is exactly
+// MoonModel::positionEci(jd).
+CelestialSystem buildSunEarthMoonSystem(CelestialBody *&outSun, CelestialBody *&outEarth, CelestialBody *&outMoon)
+{
+  constexpr double GM_SUN = 1.32712440018e20;
+  constexpr double GM_MOON = 4.9048695e12;
+
+  CelestialSystem system;
+
+  CelestialBodyParams sunParams;
+  sunParams.mu = GM_SUN;
+  outSun = system.addBody("Sun", sunParams);
+  system.starBody = outSun;
+
+  CelestialBodyParams earthParams;
+  earthParams.mu = MU_EARTH;
+  earthParams.radiusM = EARTH_RADIUS_M;
+  earthParams.dipoleTiltDeg = 11.0;
+  earthParams.dipoleScaleTm3 = 7.94e15;
+  outEarth = system.addBody("Earth", earthParams, outSun);
+  outEarth->analyticPositionFn = [](double jd) { return -SunModel::positionEci(jd); };
+
+  CelestialBodyParams moonParams;
+  moonParams.mu = GM_MOON;
+  outMoon = system.addBody("Moon", moonParams, outEarth);
+  outMoon->analyticPositionFn = [](double jd) { return MoonModel::positionEci(jd); };
+
+  return system;
+}
+
+void checkCelestialSystemHierarchy()
+{
+  double epochJd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+
+  CelestialBody *sun, *earth, *moon;
+  CelestialSystem system = buildSunEarthMoonSystem(sun, earth, moon);
+
+  check(glm::length(system.absolutePosition(sun, epochJd)) == 0.0,
+        "CelestialSystem: root body stays at the system origin");
+
+  glm::dvec3 expectedEarthPos = -SunModel::positionEci(epochJd);
+  check(glm::length(system.absolutePosition(earth, epochJd) - expectedEarthPos) < 1.0,
+        "CelestialSystem: Earth's absolute position matches -SunModel::positionEci (Sun-relative)");
+
+  glm::dvec3 expectedMoonPos = expectedEarthPos + MoonModel::positionEci(epochJd);
+  check(glm::length(system.absolutePosition(moon, epochJd) - expectedMoonPos) < 1.0,
+        "CelestialSystem: Moon's absolute position sums Earth's + its own parent-relative offset");
+}
+
+void checkCelestialPerturbationMatchesThirdBodyGravity()
+{
+  double epochJd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+
+  CelestialBody *sun, *earth, *moon;
+  CelestialSystem system = buildSunEarthMoonSystem(sun, earth, moon);
+
+  OrbitState state;
+  state.position = glm::dvec3(EARTH_RADIUS_M + 500e3, 0.0, 0.0);
+
+  CelestialPerturbation sunPerturbation(system, *earth, *sun);
+  sunPerturbation.jd = epochJd;
+  ThirdBodyGravity thirdBodySun(ThirdBodyType::Sun);
+  thirdBodySun.epochJd = epochJd;
+  double sunRelErr = glm::length(sunPerturbation.acceleration(state, 0.0) - thirdBodySun.acceleration(state, 0.0)) /
+                      glm::length(thirdBodySun.acceleration(state, 0.0));
+  check(sunRelErr < 1e-9,
+        "CelestialPerturbation(Earth, Sun): reproduces ThirdBodyGravity(Sun) exactly");
+
+  CelestialPerturbation moonPerturbation(system, *earth, *moon);
+  moonPerturbation.jd = epochJd;
+  ThirdBodyGravity thirdBodyMoon(ThirdBodyType::Moon);
+  thirdBodyMoon.epochJd = epochJd;
+  double moonRelErr = glm::length(moonPerturbation.acceleration(state, 0.0) - thirdBodyMoon.acceleration(state, 0.0)) /
+                       glm::length(thirdBodyMoon.acceleration(state, 0.0));
+  check(moonRelErr < 1e-9,
+        "CelestialPerturbation(Earth, Moon): reproduces ThirdBodyGravity(Moon) exactly");
+}
+
+void checkPhysicsWorldOrbitalMode()
+{
+  double epochJd = OrbitTime::julianDate(2026, 3, 20, 12, 0, 0.0);
+
+  CelestialBody *sun, *earth, *moon;
+  CelestialSystem system = buildSunEarthMoonSystem(sun, earth, moon);
+
+  OrbitalElements elements = OrbitalElements::circular(500e3, 51.6 * OrbitFrames::DEG2RAD, EARTH_RADIUS_M);
+  OrbitState initialState = elements.toState(MU_EARTH);
+
+  // Reference: the exact same force list (primary + Sun/Moon perturbers),
+  // propagated standalone -- proves PhysicsWorld's internal bridging
+  // doesn't silently diverge from calling OrbitPropagator directly.
+  OrbitState referenceState = initialState;
+  OrbitPropagator referenceProp;
+  referenceProp.addForceModel(std::make_unique<TwoBodyGravity>());
+  auto sunPerturbRef = std::make_unique<CelestialPerturbation>(system, *earth, *sun);
+  auto moonPerturbRef = std::make_unique<CelestialPerturbation>(system, *earth, *moon);
+  CelestialPerturbation *sunPerturbRefPtr = sunPerturbRef.get();
+  CelestialPerturbation *moonPerturbRefPtr = moonPerturbRef.get();
+  referenceProp.addForceModel(std::move(sunPerturbRef));
+  referenceProp.addForceModel(std::move(moonPerturbRef));
+
+  PhysicsWorld world;
+  world.attachCelestialSystem(&system, epochJd);
+  RigidBody *body = world.createBody(RigidBodyShape::SPHERE, glm::vec3(0.1f, 0.0f, 0.0f), 1.0f);
+  world.setOrbitalMode(body, earth, {sun, moon}, initialState);
+
+  double dt = 60.0;
+  int numSteps = 200;
+  double jd = epochJd;
+  for (int i = 0; i < numSteps; i++)
+  {
+    sunPerturbRefPtr->jd = jd;
+    moonPerturbRefPtr->jd = jd;
+    world.step(static_cast<float>(dt));
+    referenceProp.step(referenceState, dt);
+    jd = OrbitTime::advance(jd, dt);
+  }
+
+  float posError = glm::length(body->position - glm::vec3(referenceState.position));
+  check(posError < 10.0f,
+        "PhysicsWorld::setOrbitalMode: internal bridging matches standalone OrbitPropagator with the same force list");
+
+  // isInEclipse/sunDirectionAt: cross-check against the same computation
+  // done manually from the reference state.
+  glm::dvec3 sunRelToEarth = system.absolutePosition(sun, jd) - system.absolutePosition(earth, jd);
+  glm::dvec3 expectedSunDir = glm::normalize(sunRelToEarth - referenceState.position);
+  bool expectedEclipse = EclipseModel::inShadow(referenceState.position, expectedSunDir, glm::dvec3(0.0), EARTH_RADIUS_M);
+  check(world.isInEclipse(body) == expectedEclipse,
+        "PhysicsWorld::isInEclipse: matches EclipseModel::inShadow computed manually from the same state");
+
+  glm::vec3 sunDirErr = world.sunDirectionAt(body) - glm::vec3(expectedSunDir);
+  check(glm::length(sunDirErr) < 1e-4f,
+        "PhysicsWorld::sunDirectionAt: matches the direction computed manually from the same state");
+
+  glm::vec3 field = world.ambientFieldAt(body);
+  check(glm::length(field) > 0.0f,
+        "PhysicsWorld::ambientFieldAt: returns a nonzero field for an orbital-mode body around Earth");
+}
 } // namespace
 
 int main()
@@ -349,11 +544,15 @@ int main()
   checkTwoBodyKeplerianPeriod();
   checkJ2NodalRegression();
   checkSunAndEclipse();
+  checkCalendarDateRoundTrip();
   checkMoonModel();
   checkThirdBodyGravity();
   checkAtmosphericDrag();
   checkSolarRadiationPressure();
   checkCentralBodyGravityClosedOrbit();
+  checkCelestialSystemHierarchy();
+  checkCelestialPerturbationMatchesThirdBodyGravity();
+  checkPhysicsWorldOrbitalMode();
 
   std::printf("\n%s\n", g_failures == 0 ? "ALL CHECKS PASSED" : "SOME CHECKS FAILED");
   return g_failures == 0 ? 0 : 1;

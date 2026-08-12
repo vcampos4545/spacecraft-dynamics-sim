@@ -3,10 +3,17 @@
 
 bool EclipseModel::inEclipse(const glm::dvec3 &satPosEci, const glm::dvec3 &sunDirEci)
 {
-  double alongSunAxis = glm::dot(satPosEci, sunDirEci);
-  if (alongSunAxis > 0.0)
-    return false; // on the sunward side of Earth's center -- can't be in its shadow
+  return inShadow(satPosEci, sunDirEci, glm::dvec3(0.0), OrbitFrames::EARTH_RADIUS_M);
+}
 
-  glm::dvec3 perp = satPosEci - alongSunAxis * sunDirEci;
-  return glm::length(perp) < OrbitFrames::EARTH_RADIUS_M;
+bool EclipseModel::inShadow(const glm::dvec3 &position, const glm::dvec3 &lightDirFromPosition,
+                             const glm::dvec3 &occluderPosition, double occluderRadiusM)
+{
+  glm::dvec3 rel = position - occluderPosition;
+  double alongLightAxis = glm::dot(rel, lightDirFromPosition);
+  if (alongLightAxis > 0.0)
+    return false; // on the light-facing side of the occluder's center -- can't be in its shadow
+
+  glm::dvec3 perp = rel - alongLightAxis * lightDirFromPosition;
+  return glm::length(perp) < occluderRadiusM;
 }

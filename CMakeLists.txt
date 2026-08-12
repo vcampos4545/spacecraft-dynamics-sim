@@ -36,6 +36,8 @@ add_library(rigidbody STATIC
     src/orbit/ThirdBodyGravity.cpp
     src/orbit/AtmosphericDrag.cpp
     src/orbit/SolarRadiationPressure.cpp
+    src/orbit/CelestialSystem.cpp
+    src/orbit/CelestialPerturbation.cpp
     src/sensors/IMU.cpp
     src/sensors/Magnetometer.cpp
     src/sensors/StarTracker.cpp

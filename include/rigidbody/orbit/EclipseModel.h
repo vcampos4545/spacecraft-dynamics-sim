@@ -13,4 +13,12 @@ namespace EclipseModel
 // cylindrical shadow, given the unit direction from Earth to the Sun
 // (sunDirEci).
 bool inEclipse(const glm::dvec3 &satPosEci, const glm::dvec3 &sunDirEci);
+
+// Generalized form of inEclipse() for an arbitrary occluding body: is
+// `position` in the cylindrical shadow cast by a body of `occluderRadiusM`
+// centered at `occluderPosition`, given the unit direction from `position`
+// toward the light source (lightDirFromPosition)? All vectors must share
+// one common frame.
+bool inShadow(const glm::dvec3 &position, const glm::dvec3 &lightDirFromPosition,
+              const glm::dvec3 &occluderPosition, double occluderRadiusM);
 } // namespace EclipseModel

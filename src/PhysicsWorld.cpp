@@ -1,5 +1,10 @@
 #include <rigidbody/PhysicsWorld.h>
+#include <rigidbody/orbit/OrbitForceModel.h>
+#include <rigidbody/orbit/OrbitTime.h>
+#include <rigidbody/orbit/EclipseModel.h>
+#include <rigidbody/environment/central_body/CentralBodyMagneticField.h>
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <vector>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -345,6 +350,14 @@ void PhysicsWorld::addGlobalForceGenerator(std::unique_ptr<ForceGenerator> gener
 
 void PhysicsWorld::step(float dt)
 {
+  // Orbital-mode translational truth: propagated once per step() call (not
+  // once per fixedTimestep substep below) -- RK4 is stable at any step
+  // size, and matching a scenario's own outer cadence avoids wasted extra
+  // integration calls. Runs before the fixed-timestep rotational-dynamics
+  // loop so every body already has this cycle's position before forces/
+  // collisions are computed against it.
+  stepOrbitalMode(dt);
+
   // Fixed timestep accumulator pattern
   accumulator += dt;
 
@@ -357,6 +370,104 @@ void PhysicsWorld::step(float dt)
     stepFixed(fixedTimestep);
     accumulator -= fixedTimestep;
   }
+}
+
+void PhysicsWorld::attachCelestialSystem(CelestialSystem *system, double jd0)
+{
+  celestialSystem_ = system;
+  currentJd_ = jd0;
+}
+
+void PhysicsWorld::setOrbitalMode(RigidBody *body, const CelestialBody *primary,
+                                   const std::vector<const CelestialBody *> &perturbers,
+                                   const OrbitState &initialState)
+{
+  assert(celestialSystem_ && "attachCelestialSystem() must be called before setOrbitalMode()");
+
+  OrbitalModeEntry entry;
+  entry.body = body;
+  entry.primary = primary;
+  entry.state = initialState;
+
+  auto primaryGravity = std::make_unique<TwoBodyGravity>();
+  primaryGravity->mu = primary->params.mu;
+  entry.propagator.addForceModel(std::move(primaryGravity));
+
+  for (const CelestialBody *perturber : perturbers)
+  {
+    auto perturbation = std::make_unique<CelestialPerturbation>(*celestialSystem_, *primary, *perturber);
+    entry.perturbationTerms.push_back(perturbation.get());
+    entry.propagator.addForceModel(std::move(perturbation));
+  }
+
+  orbitalModeEntries_.push_back(std::move(entry));
+}
+
+void PhysicsWorld::stepOrbitalMode(float dt)
+{
+  if (!celestialSystem_ || orbitalModeEntries_.empty())
+    return;
+
+  celestialSystem_->step(dt);
+
+  // currentJd_ is the JD at t=0 of this step -- CelestialPerturbation::jd
+  // documents that same convention (matching ThirdBodyGravity::epochJd),
+  // so it must be set on every perturbation term *before* the propagate
+  // call below, and currentJd_ only advanced afterward for next cycle.
+  for (OrbitalModeEntry &entry : orbitalModeEntries_)
+  {
+    for (CelestialPerturbation *term : entry.perturbationTerms)
+      term->jd = currentJd_;
+    entry.propagator.step(entry.state, dt);
+    entry.body->position = glm::vec3(entry.state.position); // single non-accumulating cast -- see OrbitState.h
+  }
+
+  currentJd_ = OrbitTime::advance(currentJd_, dt);
+}
+
+const PhysicsWorld::OrbitalModeEntry *PhysicsWorld::findOrbitalModeEntry(const RigidBody *body) const
+{
+  for (const OrbitalModeEntry &entry : orbitalModeEntries_)
+    if (entry.body == body)
+      return &entry;
+  return nullptr;
+}
+
+bool PhysicsWorld::isInEclipse(const RigidBody *body) const
+{
+  const OrbitalModeEntry *entry = findOrbitalModeEntry(body);
+  assert(entry && "isInEclipse() requires an orbital-mode body");
+  assert(celestialSystem_->starBody && "isInEclipse() requires the CelestialSystem to have a starBody");
+
+  // entry->state is already primary-centered, so the primary (the
+  // occluder) sits at the origin of this frame -- no extra query needed.
+  glm::dvec3 starRelToPrimary = celestialSystem_->absolutePosition(celestialSystem_->starBody, currentJd_) -
+                                 celestialSystem_->absolutePosition(entry->primary, currentJd_);
+  glm::dvec3 lightDir = glm::normalize(starRelToPrimary - entry->state.position);
+  return EclipseModel::inShadow(entry->state.position, lightDir, glm::dvec3(0.0), entry->primary->params.radiusM);
+}
+
+glm::vec3 PhysicsWorld::ambientFieldAt(const RigidBody *body) const
+{
+  const OrbitalModeEntry *entry = findOrbitalModeEntry(body);
+  assert(entry && "ambientFieldAt() requires an orbital-mode body");
+
+  CentralBodyMagneticField field;
+  field.dipoleTiltDeg = static_cast<float>(entry->primary->params.dipoleTiltDeg);
+  field.dipoleScaleTm3 = static_cast<float>(entry->primary->params.dipoleScaleTm3);
+  field.rotationAxisWorld = glm::vec3(entry->primary->params.rotationAxis);
+  return field.sample(glm::vec3(entry->state.position)); // already primary-centered
+}
+
+glm::vec3 PhysicsWorld::sunDirectionAt(const RigidBody *body) const
+{
+  const OrbitalModeEntry *entry = findOrbitalModeEntry(body);
+  assert(entry && "sunDirectionAt() requires an orbital-mode body");
+  assert(celestialSystem_->starBody && "sunDirectionAt() requires the CelestialSystem to have a starBody");
+
+  glm::dvec3 starRelToPrimary = celestialSystem_->absolutePosition(celestialSystem_->starBody, currentJd_) -
+                                 celestialSystem_->absolutePosition(entry->primary, currentJd_);
+  return glm::vec3(glm::normalize(starRelToPrimary - entry->state.position));
 }
 
 void PhysicsWorld::stepFixed(float dt)
