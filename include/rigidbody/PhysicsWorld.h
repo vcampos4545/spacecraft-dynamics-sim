@@ -15,6 +15,17 @@ public:
   PhysicsWorld() = default;
   ~PhysicsWorld();
 
+  // Movable (not copyable -- owns bodies/constraints/force generators by
+  // unique_ptr) -- lets a scenario build a PhysicsWorld inside a factory
+  // function and return it by value (e.g. as a member of a larger
+  // "simulation state" object), instead of being restricted to a
+  // never-moved local. A user-declared destructor above otherwise
+  // suppresses the implicit move members, so these must be explicit.
+  PhysicsWorld(PhysicsWorld &&) = default;
+  PhysicsWorld &operator=(PhysicsWorld &&) = default;
+  PhysicsWorld(const PhysicsWorld &) = delete;
+  PhysicsWorld &operator=(const PhysicsWorld &) = delete;
+
   // Body management
   RigidBody *createBody(RigidBodyShape shape,
                         const glm::vec3 &size,
@@ -90,6 +101,14 @@ public:
   // state itself. Undefined (asserts) if `body` isn't in orbital mode.
   bool isInEclipse(const RigidBody *body) const;
   glm::vec3 ambientFieldAt(const RigidBody *body) const;
+
+  // The double-precision translational truth (primary-centered, see
+  // CelestialGravity.h) driving this orbital-mode body's position --
+  // exposed for callers that need the full state (position + velocity),
+  // e.g. to seed a standalone prediction (ground-station passes, a
+  // predicted orbit path) without re-deriving it. Asserts if `body` isn't
+  // in orbital mode.
+  const OrbitState &orbitalState(const RigidBody *body) const;
   glm::vec3 sunDirectionAt(const RigidBody *body) const;
 
 private:

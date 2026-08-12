@@ -490,10 +490,13 @@ void checkPhysicsWorldOrbitalMode()
   OrbitState referenceState = initialState;
   OrbitPropagator referenceProp;
   referenceProp.addForceModel(std::make_unique<TwoBodyGravity>());
+  // .jd is set once, to the JD at t=0 -- OrbitPropagator::step() passes
+  // cumulative elapsed time via `t`, so re-advancing .jd itself alongside
+  // that would double-count elapsed time (see CelestialPerturbation.h).
   auto sunPerturbRef = std::make_unique<CelestialPerturbation>(system, *earth, *sun);
+  sunPerturbRef->jd = epochJd;
   auto moonPerturbRef = std::make_unique<CelestialPerturbation>(system, *earth, *moon);
-  CelestialPerturbation *sunPerturbRefPtr = sunPerturbRef.get();
-  CelestialPerturbation *moonPerturbRefPtr = moonPerturbRef.get();
+  moonPerturbRef->jd = epochJd;
   referenceProp.addForceModel(std::move(sunPerturbRef));
   referenceProp.addForceModel(std::move(moonPerturbRef));
 
@@ -504,14 +507,10 @@ void checkPhysicsWorldOrbitalMode()
 
   double dt = 60.0;
   int numSteps = 200;
-  double jd = epochJd;
   for (int i = 0; i < numSteps; i++)
   {
-    sunPerturbRefPtr->jd = jd;
-    moonPerturbRefPtr->jd = jd;
     world.step(static_cast<float>(dt));
     referenceProp.step(referenceState, dt);
-    jd = OrbitTime::advance(jd, dt);
   }
 
   float posError = glm::length(body->position - glm::vec3(referenceState.position));
@@ -519,8 +518,10 @@ void checkPhysicsWorldOrbitalMode()
         "PhysicsWorld::setOrbitalMode: internal bridging matches standalone OrbitPropagator with the same force list");
 
   // isInEclipse/sunDirectionAt: cross-check against the same computation
-  // done manually from the reference state.
-  glm::dvec3 sunRelToEarth = system.absolutePosition(sun, jd) - system.absolutePosition(earth, jd);
+  // done manually from the reference state. finalJd matches world's own
+  // internally-advanced currentJd_ after numSteps calls to step().
+  double finalJd = OrbitTime::advance(epochJd, numSteps * dt);
+  glm::dvec3 sunRelToEarth = system.absolutePosition(sun, finalJd) - system.absolutePosition(earth, finalJd);
   glm::dvec3 expectedSunDir = glm::normalize(sunRelToEarth - referenceState.position);
   bool expectedEclipse = EclipseModel::inShadow(referenceState.position, expectedSunDir, glm::dvec3(0.0), EARTH_RADIUS_M);
   check(world.isInEclipse(body) == expectedEclipse,

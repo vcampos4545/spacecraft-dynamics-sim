@@ -396,6 +396,15 @@ void PhysicsWorld::setOrbitalMode(RigidBody *body, const CelestialBody *primary,
   for (const CelestialBody *perturber : perturbers)
   {
     auto perturbation = std::make_unique<CelestialPerturbation>(*celestialSystem_, *primary, *perturber);
+    // Set once, to the JD at t=0 of *this body's own* OrbitState -- not
+    // refreshed per step() call. OrbitPropagator::step() passes `t` as
+    // cumulative elapsed seconds since entry.state's own t=0 (state.
+    // missionTimeS), matching ThirdBodyGravity/SolarRadiationPressure's
+    // existing epochJd convention: `jd = epochJd + t/86400` already
+    // accounts for all elapsed time via `t` alone. Re-advancing `.jd`
+    // itself every cycle (the way currentJd_ below is advanced, for the
+    // unrelated eclipse/field queries) would double-count elapsed time.
+    perturbation->jd = currentJd_;
     entry.perturbationTerms.push_back(perturbation.get());
     entry.propagator.addForceModel(std::move(perturbation));
   }
@@ -410,18 +419,15 @@ void PhysicsWorld::stepOrbitalMode(float dt)
 
   celestialSystem_->step(dt);
 
-  // currentJd_ is the JD at t=0 of this step -- CelestialPerturbation::jd
-  // documents that same convention (matching ThirdBodyGravity::epochJd),
-  // so it must be set on every perturbation term *before* the propagate
-  // call below, and currentJd_ only advanced afterward for next cycle.
   for (OrbitalModeEntry &entry : orbitalModeEntries_)
   {
-    for (CelestialPerturbation *term : entry.perturbationTerms)
-      term->jd = currentJd_;
     entry.propagator.step(entry.state, dt);
     entry.body->position = glm::vec3(entry.state.position); // single non-accumulating cast -- see OrbitState.h
   }
 
+  // Advances the "now" JD used by isInEclipse()/ambientFieldAt()/
+  // sunDirectionAt() (queried after step() returns) -- unrelated to each
+  // perturbation term's own fixed `.jd` above.
   currentJd_ = OrbitTime::advance(currentJd_, dt);
 }
 
@@ -431,6 +437,13 @@ const PhysicsWorld::OrbitalModeEntry *PhysicsWorld::findOrbitalModeEntry(const R
     if (entry.body == body)
       return &entry;
   return nullptr;
+}
+
+const OrbitState &PhysicsWorld::orbitalState(const RigidBody *body) const
+{
+  const OrbitalModeEntry *entry = findOrbitalModeEntry(body);
+  assert(entry && "orbitalState() requires an orbital-mode body");
+  return entry->state;
 }
 
 bool PhysicsWorld::isInEclipse(const RigidBody *body) const

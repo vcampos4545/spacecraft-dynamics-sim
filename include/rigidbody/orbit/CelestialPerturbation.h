@@ -24,8 +24,13 @@ class CelestialPerturbation : public OrbitForceModel
 public:
   CelestialPerturbation(const CelestialSystem &system, const CelestialBody &primary, const CelestialBody &perturber);
 
-  // JD at t=0 of the current OrbitPropagator::step() call -- refreshed by
-  // the caller each cycle, same role ThirdBodyGravity::epochJd plays.
+  // JD at t=0 of the propagated OrbitState this force model is attached
+  // to -- set once (not re-advanced every step() call), same role
+  // ThirdBodyGravity::epochJd plays: OrbitPropagator::step() already
+  // passes `t` to acceleration() as *cumulative* elapsed seconds since
+  // t=0 (see OrbitState::missionTimeS), so `jd + t/86400` alone accounts
+  // for all elapsed time -- re-advancing `jd` itself in step with `t`
+  // would double-count it.
   double jd = 2451545.0;
 
   glm::dvec3 acceleration(const OrbitState &state, double t) const override;
