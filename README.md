@@ -1,31 +1,24 @@
 # rigidbody
 
-A lightweight rigid-body physics library, originally built for spacecraft simulation but not specific to it — anything that's a rigid body with actuators attached fits.
+A lightweight, general-purpose rigid-body physics engine in C++: bodies, constraints, actuators, sensors, and environment forces, with an optional double-precision orbital-mechanics module for anything that needs real orbit-scale accuracy. The physics core has no concept of "spacecraft" — a reaction wheel, a robot-arm joint motor, and a thruster are all just `ForceGenerator`s attached to a body, so the same engine drives spacecraft, launch-vehicle, and general-robotics scenarios. It's meant for writing and testing real controls/flight software against a simulated vehicle instead of hardware.
 
-<img width="800" height="693" alt="Image" src="https://github.com/user-attachments/assets/b2003fc4-73b6-4eda-9392-98f873fcb0b0" />
-
-It gives you:
+## What it gives you
 
 - **`RigidBody`** — box/sphere/cylinder/cone shapes, mass & inertia computed from density or mass, GJK+EPA convex collision, ground contact
-- **`PhysicsWorld`** — fixed-timestep stepping (120 Hz internally, accumulator-driven), body-body and ground collision resolution, constraint solving
-- **`Constraint`** — four primitives, each locking a specific set of the 6 relative degrees of freedom between two bodies: `FixedConstraint` (Weld — locks all 6, e.g. a nose cone bolted to a rocket), `PointConstraint` (Point-to-Point / Ball Socket — locks the 3 translational DOF, free rotation), `HingeConstraint` (Revolute — 1 free rotational DOF, with an optional angle limit and motor, e.g. a deployable solar panel), and `SliderConstraint` (Prismatic — 1 free translational DOF, with the same limit/motor pattern, e.g. a piston). They share their underlying math, so more elaborate joints can be built by combining them — a universal joint is two `HingeConstraint`s sharing a pivot, for instance. `DistanceConstraint` (a rope/strut held at a target distance rather than coincident, optionally unilateral like a string) is a fifth, distinct constraint kept alongside these four.
-- **Actuators**, as `ForceGenerator`s attached to a body — `ReactionWheel` (torque + saturation + a `healthFactor` fault model: degraded or fully-failed wheels deliver a fraction of, or none of, their commanded torque) and `Thruster` (gimbaled, throttled)
-- **Sensors**, in `include/rigidbody/sensors/` alongside actuators — `IMU` (3-axis gyro + accelerometer, modeled after commodity MEMS parts like the MPU6050: per-run turn-on bias, slow bias drift, and measurement noise, not exact ground truth). Both channels report in the sensor's own body-fixed axes; the accelerometer reads specific force at its actual mount point, so an off-center mount picks up centripetal/tangential effects from body rotation, same as a real board bolted into a corner of a bus.
-- **Environment models**, in `include/rigidbody/environment/` — passive, uncommanded forces/fields a scenario opts into, split into two self-contained folders: `uniform/` (`UniformGravity`, `UniformDrag`, `UniformMagneticField` — spatially constant or a self-contained kinematic stand-in, e.g. "gravity straight down" for a ground-based scenario) and `central_body/` (`CentralBodyGravity`, `CentralBodyDrag`, `CentralBodyMagneticField` — the position-dependent counterparts: real inverse-square gravity, altitude as true distance from a central body, a field sampled at a real position, for orbital/reentry scenarios).
-- **`orbit/`** — a self-contained, double-precision (`glm::dvec3`/`glm::dquat`) orbital-mechanics module, independent of `RigidBody`/`PhysicsWorld`'s float32 state (a LEO-radius position needs more precision than float32 gives, over a mission-duration integration — see `include/rigidbody/orbit/OrbitState.h`'s header comment): an `OrbitPropagator` (RK4, pluggable `OrbitForceModel`s — two-body gravity, J2, `ThirdBodyGravity` for Sun/Moon perturbation, `AtmosphericDrag`, `SolarRadiationPressure`), `OrbitalElements` (classical elements ↔ state vector), `OrbitFrames`/`OrbitTime` (GMST, ECEF↔ECI, geodetic↔ECEF, Julian Date epochs), `SunModel`/`MoonModel` (low-precision analytic ephemerides), and `EclipseModel` (cylindrical shadow test). `CelestialBody`/`CelestialSystem` generalize all of this into a real multi-body hierarchy (e.g. Sun → Earth → Moon, each either `OrbitPropagator`-driven or purely analytic) — a body's own `mu`/radius/J2/rotation/atmosphere/dipole-field parameters replace what used to be Earth-hardcoded constants in `ThirdBodyGravity`/`EclipseModel`/`AtmosphericDrag`, with `CelestialPerturbation` as the matching `OrbitForceModel` for perturbation from any system body (not just a closed Sun/Moon enum) using its live current position. Bridge `OrbitPropagator`'s output into a `RigidBody`'s position each frame for local dynamics/rendering rather than integrating a mission-duration trajectory through `RigidBody` directly.
+- **`PhysicsWorld`** — fixed-timestep stepping (120 Hz internally, accumulator-driven), body-body and ground collision resolution, Sequential Impulse constraint solving with Baumgarte stabilization
+- **`Constraint`** — five primitives built from shared solver math: `FixedConstraint` (weld, locks all 6 DOF), `PointConstraint` (ball socket, locks translation), `HingeConstraint` (revolute, 1 free rotational DOF with an optional limit + motor), `SliderConstraint` (prismatic, 1 free translational DOF with the same limit/motor pattern), and `DistanceConstraint` (a rope/strut held at a target distance, optionally unilateral like a string). More elaborate joints compose from these — a universal joint is two `HingeConstraint`s sharing a pivot, for instance.
+- **Actuators**, as `ForceGenerator`s attached to a body — `ReactionWheel` (torque + saturation + a `healthFactor` fault model for degraded/failed wheels) and `Thruster` (gimbaled, throttled). Neither is spacecraft-specific in the engine itself; attaching a reaction wheel to a non-spacecraft body works exactly the same way.
+- **Sensors**, in `include/rigidbody/sensors/` — `IMU` (3-axis gyro + accelerometer modeled after commodity MEMS parts like the MPU6050: per-run turn-on bias, slow bias drift, and measurement noise, not exact ground truth), reporting in the sensor's own body-fixed axes.
+- **Environment models**, in `include/rigidbody/environment/` — passive, uncommanded forces/fields a scenario opts into, split into `uniform/` (spatially constant: gravity, drag, magnetic field) and `central_body/` (position-dependent counterparts for orbital/reentry scenarios: real inverse-square gravity, altitude as true distance from a central body, a field sampled at a real position).
+- **`orbit/`** — a self-contained, double-precision (`glm::dvec3`/`glm::dquat`) orbital-mechanics module, independent of `RigidBody`/`PhysicsWorld`'s float32 state (a LEO-radius position needs more precision than float32 gives over a mission-duration integration): an `OrbitPropagator` (RK4, pluggable force models — two-body gravity, J2, third-body Sun/Moon perturbation, atmospheric drag, solar radiation pressure), `OrbitalElements` conversions, frame/time utilities (GMST, ECEF↔ECI, geodetic↔ECEF, Julian dates), analytic Sun/Moon ephemerides, eclipse geometry, and a `CelestialSystem` that generalizes all of it into a real multi-body hierarchy (Sun → Earth → Moon, each either propagated or analytic) instead of hardcoding Earth-specific constants into every force model.
 
-See [`examples/`](examples/) for complete simulations that show how the pieces fit together — including a full attitude-control flight-software stack for the cubesat. Each example's scene dressing (background, lighting, ground, an optional starfield) comes from [`examples/common/World.h`](examples/common/World.h), a small shared `World` class with three presets — `SPACE` (starfield, no ground), `EARTH` (blue sky, infinite green ground plane), and `DEFAULT` (neutral studio backdrop) — picked per scenario and otherwise unrelated to the physics/FSW code, which stays scenario-owned as usual.
+## Design principle
 
-| Example                                                     | What it demonstrates                                                                                                                                                         |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`cubesat_pyramid`](examples/cubesat_pyramid/)                | A full cubesat ADCS: 6 pointing modes (Nadir/Sun/Detumble/Target/Slew/Fine, each with its own guidance and controller tuning) flown on IMU readings alone — the FSW never reads ground-truth attitude — over a 4-wheel pyramid RWA subject to randomly-occurring wheel faults |
-| [`orbit_validation`](examples/orbit_validation/)              | Headless (no VGL/imgui) correctness checks for `orbit/`: `OrbitalElements` round-tripping, `OrbitPropagator` against two-body/J2/third-body/drag/SRP force models, a `CelestialSystem` Sun→Earth→Moon hierarchy, and eclipse geometry — prints PASS/FAIL per check, same convention as satellite-adcs-sim's own test suite |
-| [`falcon9`](examples/falcon9/)                                | A multi-body rocket (cylinder + nose cone + 4 landing legs, connected with `FixedConstraint`s) with gimbaled `Thruster`s and an inline guidance controller                  |
-| [`bars`](examples/bars/)                                      | A 5-level Calder mobile built entirely from `DistanceConstraint` — no flight software, just constraints                                                                     |
-| [`solar_panel_deploy`](examples/solar_panel_deploy/)          | Two panels hinged to a bus with `HingeConstraint`, each independently deployable (press 1 / 2) via a motor driving against an angle limit                                   |
-| [`chain`](examples/chain/)                                    | A rigid multi-link chain built from `PointConstraint`s, released from a swept-back pose to swing freely under gravity                                                       |
-| [`telescoping_boom`](examples/telescoping_boom/)              | An antenna boom on a `SliderConstraint`, driven continuously by the operator (hold Up/Down) rather than deploying once to a limit                                           |
-| [`starship`](examples/starship/)                              | Real-scale Super Heavy + Starship (`Booster`/`Starship` classes), welded stack staged via `removeConstraint`, 33+6 realistically-placed Raptors, propellant depletion via `RigidBody::setMass` |
+The engine never assumes what's driving a body. Your own flight-software or controller code reads body/sensor state and commands actuators each frame; `PhysicsWorld` just integrates whatever forces and torques those actuators produced. That boundary is what let a hardware-abstracted flight-software stack ([Satellite ADCS Simulation](https://github.com/vcampos4545/satellite-adcs-sim)) build on top of this engine without either project needing to know about the other's internals — and it's exactly the same boundary a robot-arm controller or any other actuated rigid body uses.
+
+## Examples
+
+`examples/` has worked scenarios spanning spacecraft, launch vehicles, and general robotics/mechanisms — a CubeSat flown on a 4-wheel reaction-wheel pyramid, a multi-body rocket with gimbaled thrusters and in-flight staging, a robot arm, hinge- and slider-driven mechanisms (a deploying solar panel, a telescoping boom), a constraint-only Calder mobile, and headless correctness checks for the orbital-mechanics module. See each example's own folder for what it demonstrates in detail.
 
 ## Dependencies
 
@@ -54,7 +47,7 @@ The `rigidbody` CMake target has no rendering dependency — link it from a head
 include(FetchContent)
 FetchContent_Declare(
   rigidbody
-  GIT_REPOSITORY https://github.com/vcampos4545/spacecraft-dynamics-sim.git
+  GIT_REPOSITORY https://github.com/vcampos4545/rigidbody.git
   GIT_TAG main
 )
 FetchContent_MakeAvailable(rigidbody)
@@ -65,7 +58,7 @@ target_link_libraries(your_app PRIVATE rigidbody)
 ### Git submodule
 
 ```bash
-git submodule add https://github.com/vcampos4545/spacecraft-dynamics-sim.git external/rigidbody
+git submodule add https://github.com/vcampos4545/rigidbody.git external/rigidbody
 ```
 
 ```cmake
@@ -104,13 +97,13 @@ int main()
 cd build && cmake .. && cmake --build .
 ```
 
-This builds VGL (from a local `../VGL` checkout if present, otherwise via `FetchContent`) and produces three executables: `cubesat`, `falcon-9`, `bars`.
+This builds VGL (from a local `../VGL` checkout if present, otherwise via `FetchContent`) and the full set of example executables listed above (`orbit-validation`, `bars`, `solar-panel-deploy`, `chain`, `telescoping-boom`, `cubesat-pyramid`, `starship`, `starship-landing`, `robot-arm`, and — on supported platforms — `sitl`).
 
 ## Building your own simulation
 
-A simulation is a `PhysicsWorld`, one or more `RigidBody`s with actuators attached, and your own flight-software code that reads body state as sensor data and commands those actuators each frame. The engine has no concept of "spacecraft" or "sensor" — that's entirely up to your scenario. Every example in `examples/` follows the same four steps:
+A simulation is a `PhysicsWorld`, one or more `RigidBody`s with actuators attached, and your own flight-software or controller code that reads body state as sensor data and commands those actuators each frame. The engine has no concept of "spacecraft" or "sensor" — that's entirely up to your scenario. Every example in `examples/` follows the same four steps:
 
-### 1. Define your spacecraft
+### 1. Define your vehicle
 
 Create a `RigidBody` and attach actuators. Actuators are `ForceGenerator`s owned by the body once attached — `addForceGenerator` takes a `unique_ptr`, so keep the raw pointer around to command it later:
 
@@ -127,11 +120,11 @@ for (auto &axis : axes)
 }
 ```
 
-`ReactionWheel`s are stepped automatically every `world.step(dt)` (they're `ForceGenerator`s). `Thruster`s are throttled/fired directly instead — see `examples/falcon9/falcon-9.cpp` for the pattern (`thruster.apply(body, throttle)` called once per frame).
+`ReactionWheel`s are stepped automatically every `world.step(dt)` (they're `ForceGenerator`s). `Thruster`s are throttled/fired directly instead — see `examples/starship/` for the pattern (`thruster.apply(body, throttle)` called once per frame).
 
-### 2. Write your flight software
+### 2. Write your flight software or controller
 
-A small class holding references to the body and its actuators, turning "read sensors" into "command actuators." This is entirely your code — model it on `examples/cubesat/ADCS.h/.cpp` for a worked example:
+A small class holding references to the body and its actuators, turning "read sensors" into "command actuators." This is entirely your code — model it on `examples/cubesat_pyramid/` for a worked example:
 
 ```cpp
 class MyFSW
@@ -176,4 +169,4 @@ while (running)
 
 ### 4. Add it to the build
 
-New simulations live in their own folder under `examples/<name>/`. Wire it up as a new `add_executable` in the top-level `CMakeLists.txt` inside the `RIGIDBODY_BUILD_EXAMPLES` block — see the `cubesat`, `falcon-9`, and `bars` targets for the pattern. Rendering is optional; the physics side works fine headless.
+New simulations live in their own folder under `examples/<name>/`. Wire it up as a new `add_executable` in the top-level `CMakeLists.txt` inside the `RIGIDBODY_BUILD_EXAMPLES` block — see any existing target for the pattern. Rendering is optional; the physics side works fine headless.
